@@ -24,11 +24,11 @@ Passwords are hashed with Argon2id off the async worker. Random 256-bit opaque s
 
 Cookie-authenticated mutations require an exact configured Origin. CORS only permits the configured frontend origin with credentials. Request bodies are capped. Database failures are logged internally and return safe messages. Never trust client-provided user IDs, role escalation, forwarded IP headers or verification fields.
 
-Serve frontend and API behind one HTTPS origin in production. Set proxy timeouts, body limits and abuse controls. Use a restricted database runtime role, audited migration deployment, connection budget, backups and alerts. The development database credentials are not production credentials.
+Serve frontend and API behind one HTTPS origin in production. `/health` reports process liveness and `/ready` verifies database access for load-balancer admission. Every response carries a generated `X-Request-Id`, and completion logs include that ID, route, status and elapsed time. Set proxy timeouts, body limits and abuse controls. Use a restricted database runtime role, audited migration deployment, connection budget, backups and alerts. The development database credentials are not production credentials.
 
 ## Operational gaps
 
-This is the initial product foundation. Signed Cloudinary uploads are implemented and live-provider verified. Email verification and password recovery are deferred with Google authentication. The initial audited moderation queue is implemented. Agent properties, inquiries and saved homes use stable cursor pagination, with separate aggregate counts for the agent dashboard. Expired sessions are removed hourly in bounded batches. Every state and the FCT have a primary market; detailed city and area coverage remains curated. Production observability requires follow-up before public launch. Property view analytics are intentionally deferred until privacy and retention requirements are defined.
+This is the initial product foundation. Signed Cloudinary uploads are implemented and live-provider verified. Email verification and password recovery are deferred with Google authentication. The initial audited moderation queue is implemented. Agent properties, inquiries and saved homes use stable cursor pagination, with separate aggregate counts for the agent dashboard. Expired sessions are removed hourly in bounded batches. Every state and the FCT have a primary market; detailed city and area coverage remains curated. External log retention, metrics and alert routing require production-provider configuration. Property view analytics are intentionally deferred until privacy and retention requirements are defined.
 
 ## Module boundaries
 

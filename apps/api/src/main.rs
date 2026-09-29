@@ -4,12 +4,14 @@ mod auth;
 mod community;
 mod error;
 mod images;
+mod observability;
 mod pagination;
 mod properties;
 mod security;
 use actix_web::{
-    App, HttpResponse, HttpServer,
+    App, HttpServer,
     dev::Service,
+    http::header::{HeaderName, HeaderValue},
     middleware::{DefaultHeaders, Logger},
     web,
 };
@@ -53,6 +55,29 @@ async fn main() -> std::io::Result<()> {
                     .error_handler(|_, _| crate::error::bad("Invalid property identifier").into()),
             )
             .wrap(Logger::default())
+            .wrap_fn(|req, srv| {
+                let request_id = uuid::Uuid::new_v4().to_string();
+                let method = req.method().clone();
+                let path = req.path().to_owned();
+                let started = std::time::Instant::now();
+                let future = srv.call(req);
+                async move {
+                    let mut response = future.await?;
+                    response.headers_mut().insert(
+                        HeaderName::from_static("x-request-id"),
+                        HeaderValue::from_str(&request_id).expect("UUID is a valid header value"),
+                    );
+                    tracing::info!(
+                        request_id,
+                        method = %method,
+                        path,
+                        status = response.status().as_u16(),
+                        elapsed_ms = started.elapsed().as_millis(),
+                        "Request completed"
+                    );
+                    Ok(response)
+                }
+            })
             .wrap(
                 DefaultHeaders::new()
                     .add(("X-Content-Type-Options", "nosniff"))
@@ -107,11 +132,8 @@ async fn main() -> std::io::Result<()> {
                     }
                 }
             })
-            .route(
-                "/health",
-                web::get()
-                    .to(|| async { HttpResponse::Ok().json(serde_json::json!({"status":"ok"})) }),
-            )
+            .route("/health", web::get().to(observability::live))
+            .route("/ready", web::get().to(observability::ready))
             .service(
                 web::scope("/api/v1")
                     .configure(auth::routes)

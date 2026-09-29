@@ -9,6 +9,7 @@
   - Malformed edit identifiers cannot fall through to property creation.
   - Managed photo ownership, duplicate attachment prevention and removal queuing.
   - Ownership checks, private drafts, publication, favorites, inquiry isolation and logout revocation.
+  - Database readiness and per-response request correlation identifiers.
   - Stable newest and price pagination across ties.
   - National state/primary-city coverage, invalid location hierarchy, admin role escalation and cross-origin writes.
   - Desktop/mobile homepage, horizontal overflow, mobile navigation/search and the advanced location/bedroom filter panel.

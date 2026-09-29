@@ -96,6 +96,12 @@ test("ownership, publishing, search, favorites, inquiries and session revocation
   ).toBe(204);
   const details = await anonymous.get(`${baseURL}/properties/${property.slug}`);
   expect(details.status()).toBe(200);
+  expect(details.headers()["x-request-id"]).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
+  const ready = await anonymous.get("http://127.0.0.1:8081/ready");
+  expect(ready.status()).toBe(200);
+  expect(await ready.json()).toEqual({ status: "ready" });
   const payload = await details.json();
   expect(payload.agent.email).toBeUndefined();
   expect(payload.password_hash).toBeUndefined();
