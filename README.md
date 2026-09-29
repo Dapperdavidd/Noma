@@ -41,7 +41,7 @@ TEST_DATABASE_URL=postgres://noma:noma@localhost:5432/noma_test npm test
 
 ## Working flows
 
-Account registration and sign-in; property seeker and agent roles; server-side ownership checks; draft creation and editing; publish/archive/status management; full-text search; normalized state/city/area filters; budget, bedroom and multi-amenity filters; price sorting with stable cursor pagination; property details and galleries; saved properties; inquiries and an agent dashboard. Images accept externally hosted HTTPS URLs and signed direct Cloudinary uploads when configured. No image binaries are stored in PostgreSQL.
+Account registration and sign-in; property seeker and agent roles; server-side ownership checks; draft creation and editing; publish/archive/status management; full-text search; normalized state/city/area filters; budget, bedroom and multi-amenity filters; price sorting with stable cursor pagination; property details and galleries; saved properties; inquiries and an agent dashboard. Images accept externally hosted HTTPS URLs and signed direct Cloudinary uploads when configured. Managed uploads are confirmed server-side, tied to their owner and listing, and cleaned up when discarded or removed. No image binaries are stored in PostgreSQL.
 
 ## Before public launch
 
@@ -49,7 +49,9 @@ Connect Cloudinary credentials and a signed upload preset, a production database
 
 ## Image uploads
 
-Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, and `CLOUDINARY_UPLOAD_PRESET` in the API environment. Create a **signed** preset restricting formats to JPEG/PNG/WebP/AVIF and maximum file size to 10 MB. Secrets never belong in `VITE_*` variables. The API signs a unique per-agent public ID, disables overwrites, and the browser uploads directly to Cloudinary. Without credentials, image links remain usable and uploads return an explicit unavailable response. Upload signatures follow [Cloudinary's official signing specification](https://cloudinary.com/documentation/authentication_signatures). Live provider validation is pending account access.
+Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, and `CLOUDINARY_UPLOAD_PRESET` in the API environment. Create a **signed** preset restricting formats to JPEG/PNG/WebP/AVIF and maximum file size to 10 MB. Secrets never belong in `VITE_*` variables. The API signs a unique per-agent public ID, disables overwrites, and the browser uploads directly to Cloudinary. Without credentials, image links remain usable and uploads return an explicit unavailable response. Upload signatures follow [Cloudinary's official signing specification](https://cloudinary.com/documentation/authentication_signatures). The connected development account has passed a live upload, confirmation and deletion cycle.
+
+Each signed upload creates a short-lived database intent. After the browser upload, the API independently verifies the public ID with Cloudinary before it can be attached to a listing. Upload IDs cannot be reused by another account or attached twice. The form discards unused uploads when possible; stale and failed deletions are retried in bounded batches when another upload begins.
 
 ## Administration
 

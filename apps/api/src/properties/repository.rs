@@ -1,4 +1,4 @@
-use super::dto::{Listing, Search, Status};
+use super::dto::{Listing, ListingImage, Search, Status};
 use crate::{
     auth,
     error::{ApiError, bad},
@@ -197,6 +197,44 @@ pub async fn save(
             ));
         }
     }
+    let mut prepared_images = Vec::with_capacity(body.images.len());
+    for image in &body.images {
+        match image {
+            ListingImage::External(url) => {
+                prepared_images.push((url.clone(), None, None));
+            }
+            ListingImage::Managed { upload_id, url } => {
+                let upload: Option<(String, String)> = sqlx::query_as(
+                    "SELECT public_id,secure_url FROM image_uploads WHERE id=$1 AND secure_url=$2 AND ((user_id=$3 AND status='uploaded') OR (property_id=$4 AND status='attached'))",
+                )
+                .bind(upload_id)
+                .bind(url)
+                .bind(user.id)
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                let (public_id, secure_url) = upload.ok_or_else(|| {
+                    bad("An uploaded photo is unavailable or belongs to another account")
+                })?;
+                prepared_images.push((secure_url, Some(public_id), Some(*upload_id)));
+            }
+        }
+    }
+    let selected_upload_ids = prepared_images
+        .iter()
+        .filter_map(|(_, _, upload_id)| *upload_id)
+        .collect::<Vec<_>>();
+    let removed_uploads: Vec<(Uuid, String)> = if path.is_some() {
+        sqlx::query_as(
+            "SELECT upload_id,public_id FROM property_images WHERE property_id=$1 AND upload_id IS NOT NULL AND NOT (upload_id=ANY($2))",
+        )
+        .bind(id)
+        .bind(&selected_upload_ids)
+        .fetch_all(&mut *tx)
+        .await?
+    } else {
+        Vec::new()
+    };
     let slug = format!(
         "{}-{}",
         body.title
@@ -214,8 +252,23 @@ pub async fn save(
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    for (index, url) in body.images.iter().enumerate() {
-        sqlx::query("INSERT INTO property_images(id,property_id,url,position,is_cover) VALUES($1,$2,$3,$4,$5)").bind(Uuid::new_v4()).bind(id).bind(url).bind(index as i16).bind(index==0).execute(&mut *tx).await?;
+    for (index, (url, public_id, upload_id)) in prepared_images.iter().enumerate() {
+        sqlx::query("INSERT INTO property_images(id,property_id,url,public_id,upload_id,position,is_cover) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(Uuid::new_v4()).bind(id).bind(url).bind(public_id).bind(upload_id).bind(index as i16).bind(index==0).execute(&mut *tx).await?;
+        if let Some(upload_id) = upload_id {
+            sqlx::query("UPDATE image_uploads SET property_id=$1,status='attached',attached_at=COALESCE(attached_at,now()) WHERE id=$2")
+                .bind(id)
+                .bind(upload_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
+    for (upload_id, _) in &removed_uploads {
+        sqlx::query(
+            "UPDATE image_uploads SET property_id=NULL,status='pending_delete' WHERE id=$1",
+        )
+        .bind(upload_id)
+        .execute(&mut *tx)
+        .await?;
     }
     sqlx::query("DELETE FROM property_amenities WHERE property_id=$1")
         .bind(id)
@@ -229,6 +282,23 @@ pub async fn save(
             .await?;
     }
     tx.commit().await?;
+    for (upload_id, public_id) in removed_uploads {
+        match crate::images::delete_asset(&public_id).await {
+            Ok(()) => {
+                if let Err(error) =
+                    sqlx::query("UPDATE image_uploads SET status='deleted' WHERE id=$1")
+                        .bind(upload_id)
+                        .execute(pool)
+                        .await
+                {
+                    tracing::warn!(%error, %upload_id, "Photo was removed from Cloudinary but its cleanup record was not updated");
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, %upload_id, "Removed photo remains queued for cleanup");
+            }
+        }
+    }
     Ok(json!({"id":id,"slug":saved_slug}))
 }
 pub async fn transition(

@@ -28,10 +28,16 @@ Serve frontend and API behind one HTTPS origin in production. Set proxy timeouts
 
 ## Operational gaps
 
-This is the initial product foundation. Signed Cloudinary uploads are implemented and need credentials plus a restrictive signed upload preset for live verification. Email verification and password recovery need an email provider. The initial audited moderation queue is implemented. Complete location coverage, cursor pagination for large agent dashboards, session cleanup scheduling and observability require follow-up before public launch. Current dashboard and saved-card endpoints are capped at 100 rows. Property view analytics are intentionally deferred until privacy and retention requirements are defined.
+This is the initial product foundation. Signed Cloudinary uploads are implemented and live-provider verified. Email verification and password recovery are deferred with Google authentication. The initial audited moderation queue is implemented. Complete location coverage, cursor pagination for large agent dashboards, session cleanup scheduling and observability require follow-up before public launch. Current dashboard and saved-card endpoints are capped at 100 rows. Property view analytics are intentionally deferred until privacy and retention requirements are defined.
 
 ## Module boundaries
 
 Property HTTP handlers translate authentication and request data; DTOs validate listing inputs; the repository owns parameterized search, detail projections and transactional writes. Separate modules own authentication, agent profiles, moderation and signed upload issuance. Shared community endpoints cover the small location, favorites and inquiry features. Expand these into their own repositories when their behavior grows; avoid speculative generic service frameworks.
 
 A bounded in-process request limiter protects authentication and mutations. It is a single-instance guardrail, not a substitute for distributed edge protection. Only socket peer addresses are trusted, so a reverse proxy must apply its own user/IP-aware limits. Moderation decisions have an append-only application audit path. Listing edits invalidate listing verification; agent profile edits reset agent verification to pending.
+
+## Managed image lifecycle
+
+The API creates an owned upload intent before signing a direct Cloudinary upload. The browser never receives the Cloudinary secret. After upload, the API queries Cloudinary using server credentials and records the provider's canonical secure URL before marking the intent uploaded. Property writes accept an uploaded intent only from its owner, or an already attached intent on the same property. A unique database reference prevents one upload from appearing twice.
+
+Removing a managed photo commits the listing change first, marks the image for deletion, then removes the remote asset. Provider failures leave an explicit `pending_delete` record for retry rather than rolling back an otherwise valid listing update. Unattached uploads older than 24 hours are cleaned in bounded batches when new signatures are requested. A dedicated worker can take over this retry query when traffic and operational requirements justify it.

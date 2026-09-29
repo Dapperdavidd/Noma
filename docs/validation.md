@@ -5,8 +5,9 @@
 - React/TypeScript production bundle builds successfully.
 - Rust formatter and Clippy pass with warnings treated as errors.
 - Two Rust unit tests cover request limiting and signature determinism.
-- Eight Playwright integration/browser scenarios pass against a real PostgreSQL test database:
+- Nine Playwright integration/browser scenarios pass against a real PostgreSQL test database:
   - Malformed edit identifiers cannot fall through to property creation.
+  - Managed photo ownership, duplicate attachment prevention and removal queuing.
   - Ownership checks, private drafts, publication, favorites, inquiry isolation and logout revocation.
   - Stable newest and price pagination across ties.
   - Invalid location hierarchy, admin role escalation and cross-origin writes.
@@ -28,4 +29,4 @@ These are individual local query executions, not concurrent load-test results or
 
 ## External checks still required
 
-Cloudinary uploads require the owner's provider configuration. Transactional email recovery/verification and production deployment have not been connected. Homepage images are illustrative Unsplash images, not evidence of real Nigerian listings; replace with owned or approved launch imagery. Browser screenshots were inspected at desktop and 390-pixel mobile widths.
+Transactional email recovery/verification, Google authentication and production deployment have not been connected. Homepage images are illustrative Unsplash images, not evidence of real Nigerian listings; replace with owned or approved launch imagery. Browser screenshots were inspected at desktop and 390-pixel mobile widths. A live signed Cloudinary upload was issued, independently confirmed through the API, discarded through the managed endpoint, and verified absent from the provider afterward.

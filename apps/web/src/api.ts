@@ -25,7 +25,12 @@ export type Property = {
   created_at: string;
   description?: string;
   address?: string;
-  images?: { url: string }[];
+  images?: {
+    id?: string;
+    url: string;
+    public_id?: string | null;
+    upload_id?: string | null;
+  }[];
   amenities?: string[];
   amenity_ids?: string[];
   agent?: {

@@ -19,6 +19,28 @@ pub struct Search {
     pub limit: Option<i64>,
 }
 #[derive(Deserialize)]
+#[serde(untagged)]
+pub enum ListingImage {
+    External(String),
+    Managed { upload_id: Uuid, url: String },
+}
+
+impl ListingImage {
+    pub fn url(&self) -> &str {
+        match self {
+            Self::External(url) | Self::Managed { url, .. } => url,
+        }
+    }
+
+    pub fn upload_id(&self) -> Option<Uuid> {
+        match self {
+            Self::External(_) => None,
+            Self::Managed { upload_id, .. } => Some(*upload_id),
+        }
+    }
+}
+
+#[derive(Deserialize)]
 pub struct Listing {
     pub title: String,
     pub description: String,
@@ -33,7 +55,7 @@ pub struct Listing {
     pub city_id: Uuid,
     pub area_id: Option<Uuid>,
     pub address: String,
-    pub images: Vec<String>,
+    pub images: Vec<ListingImage>,
     #[serde(default)]
     pub amenity_ids: Vec<Uuid>,
 }
@@ -86,9 +108,21 @@ impl Listing {
             || self
                 .images
                 .iter()
-                .any(|v| !v.starts_with("https://") || v.len() > 2048)
+                .map(ListingImage::url)
+                .any(|url| !url.starts_with("https://") || url.len() > 2048)
         {
             return Err(bad("Provide 1–20 HTTPS image URLs"));
+        }
+        let mut upload_ids = self
+            .images
+            .iter()
+            .filter_map(ListingImage::upload_id)
+            .collect::<Vec<_>>();
+        let managed_count = upload_ids.len();
+        upload_ids.sort_unstable();
+        upload_ids.dedup();
+        if upload_ids.len() != managed_count {
+            return Err(bad("A managed photo cannot be used more than once"));
         }
         Ok(())
     }

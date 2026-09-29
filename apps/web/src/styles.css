@@ -1739,6 +1739,46 @@ form .upload-zone span {
   font-size: 10px;
   color: #879175;
 }
+.listing-image-previews {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: -6px 0 20px;
+}
+.listing-image-previews > div {
+  position: relative;
+  aspect-ratio: 1.25;
+  overflow: hidden;
+  border-radius: 7px;
+  background: #e8e9df;
+}
+.listing-image-previews img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.listing-image-previews span {
+  position: absolute;
+  bottom: 7px;
+  left: 7px;
+  padding: 4px 7px;
+  border-radius: 4px;
+  background: #22281dcc;
+  color: white;
+  font-size: 8px;
+}
+.listing-image-previews button {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #f8f8f1e8;
+  color: #313a2b;
+}
 .dashboard-links {
   display: flex;
   gap: 25px;
@@ -1935,5 +1975,8 @@ form .amenity-picker input {
   .filter-actions .button {
     flex: 1;
     padding-inline: 12px;
+  }
+  .listing-image-previews {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

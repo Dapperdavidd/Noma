@@ -1,8 +1,8 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowRight, ArrowLeft } from "lucide-react";
+import { ArrowRight, ArrowLeft, X } from "lucide-react";
 import { api, type Property, type Location } from "../api";
-import { uploadPhoto } from "../uploads";
+import { uploadPhoto, type ManagedUpload } from "../uploads";
 import { Notice } from "../components";
 
 export function ListingForm() {
@@ -19,7 +19,9 @@ export function ListingForm() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [imageUrls, setImageUrls] = useState("");
+  const [managedImages, setManagedImages] = useState<ManagedUpload[]>([]);
   const [uploading, setUploading] = useState(false);
+  const pendingUploads = useRef(new Set<string>());
   const navigate = useNavigate();
   useEffect(() => {
     api<{ id: string; name: string }[]>("/amenities")
@@ -34,12 +36,33 @@ export function ListingForm() {
           setP(v);
           setSelectedAmenities(v.amenity_ids || []);
           setImageUrls(v.images?.map((i) => i.url).join("\n") || "");
+          setManagedImages(
+            v.images
+              ?.filter((image) => image.upload_id && image.public_id)
+              .map((image) => ({
+                upload_id: image.upload_id!,
+                public_id: image.public_id!,
+                url: image.url,
+              })) || [],
+          );
           setState(v.state_id || "");
           setCity(v.city_id || "");
           setType(v.listing_type);
         })
         .catch((e) => setError(e.message));
   }, [slug]);
+  useEffect(
+    () => () => {
+      for (const uploadId of pendingUploads.current) {
+        void fetch(`/api/v1/images/uploads/${uploadId}`, {
+          method: "DELETE",
+          credentials: "include",
+          keepalive: true,
+        });
+      }
+    },
+    [],
+  );
   async function photos(files: FileList | null) {
     if (!files) return;
     const existing = imageUrls.split("\n").filter(Boolean);
@@ -51,8 +74,10 @@ export function ListingForm() {
     setError("");
     try {
       for (const file of Array.from(files)) {
-        const url = await uploadPhoto(file);
-        setImageUrls((old) => (old ? `${old}\n${url}` : url));
+        const image = await uploadPhoto(file);
+        pendingUploads.current.add(image.upload_id);
+        setManagedImages((old) => [...old, image]);
+        setImageUrls((old) => (old ? `${old}\n${image.url}` : image.url));
       }
     } catch (e) {
       setError((e as Error).message);
@@ -65,6 +90,14 @@ export function ListingForm() {
     setBusy(true);
     setError("");
     const values = Object.fromEntries(new FormData(e.currentTarget));
+    const imageValues = String(values.images)
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map((url) => {
+        const managed = managedImages.find((image) => image.url === url);
+        return managed ? { upload_id: managed.upload_id, url } : url;
+      });
     const body = {
       ...values,
       amenity_ids: selectedAmenities,
@@ -74,16 +107,26 @@ export function ListingForm() {
       size_sqm: values.size_sqm ? Number(values.size_sqm) : null,
       area_id: values.area_id || null,
       rental_period: type === "sale" ? null : values.rental_period,
-      images: String(values.images)
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean),
+      images: imageValues,
     };
     try {
       await api(p ? `/properties/${p.id}` : "/properties", {
         method: p ? "PUT" : "POST",
         body: JSON.stringify(body),
       });
+      const attached = new Set(
+        imageValues
+          .filter(
+            (image): image is { upload_id: string; url: string } =>
+              typeof image !== "string",
+          )
+          .map((image) => image.upload_id),
+      );
+      pendingUploads.current = new Set(
+        [...pendingUploads.current].filter(
+          (uploadId) => !attached.has(uploadId),
+        ),
+      );
       navigate("/dashboard");
     } catch (e) {
       setError((e as Error).message);
@@ -93,6 +136,10 @@ export function ListingForm() {
   }
   const selectedState = locations.find((s) => s.id === state);
   const selectedCity = selectedState?.cities.find((c) => c.id === city);
+  const imageList = imageUrls
+    .split("\n")
+    .map((url) => url.trim())
+    .filter(Boolean);
   if (slug && !p) return <Notice>{error || "Loading property…"}</Notice>;
   return (
     <>
@@ -304,6 +351,32 @@ export function ListingForm() {
               placeholder="https://your-image-provider.com/property-front.jpg"
             />
           </label>
+          {imageList.length > 0 && (
+            <div
+              className="listing-image-previews"
+              aria-label="Property photos"
+            >
+              {imageList.map((url, index) => (
+                <div key={`${url}-${index}`}>
+                  <img src={url} alt={`Property preview ${index + 1}`} />
+                  {index === 0 && <span>Cover photo</span>}
+                  <button
+                    type="button"
+                    aria-label={`Remove property photo ${index + 1}`}
+                    onClick={() =>
+                      setImageUrls(
+                        imageList
+                          .filter((_, item) => item !== index)
+                          .join("\n"),
+                      )
+                    }
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <p className="fine-print">
             You can also paste existing image links, one per line.
           </p>

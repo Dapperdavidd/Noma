@@ -7,6 +7,9 @@ import {
 } from "@playwright/test";
 const baseURL = "http://127.0.0.1:8081/api/v1";
 const origin = "http://localhost:5174";
+const database =
+  process.env.TEST_DATABASE_URL ||
+  "postgres://noma:noma@localhost:5432/noma_test";
 async function account(role = "agent") {
   const client = await request.newContext({
     baseURL,
@@ -467,9 +470,6 @@ test("agent profiles, amenities, inquiry statuses and administrator boundaries",
 test("administrator review is audited and verification stays independent", async () => {
   const administrator = await account();
   const owner = await account();
-  const database =
-    process.env.TEST_DATABASE_URL ||
-    "postgres://noma:noma@localhost:5432/noma_test";
   if (new URL(database).pathname !== "/noma_test")
     throw new Error(
       "Administrator fixture requires the isolated noma_test database",
@@ -583,4 +583,87 @@ test("malformed edit identifiers cannot create a new property", async () => {
       .data,
   ).toHaveLength(0);
   await owner.client.dispose();
+});
+
+test("managed photos are owned, attached once and queued when removed", async () => {
+  const owner = await account();
+  const other = await account();
+  const uploadId = crypto.randomUUID();
+  const publicId = `noma/${owner.user.id}/${crypto.randomUUID()}`;
+  const url = `https://res.cloudinary.com/test/image/upload/${publicId}.jpg`;
+  execFileSync("psql", [
+    database,
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-c",
+    `INSERT INTO image_uploads(id,user_id,public_id,secure_url,status,confirmed_at) VALUES('${uploadId}','${owner.user.id}','${publicId}','${url}','uploaded',now())`,
+  ]);
+  const managedListing = {
+    ...listing(`Managed image ${crypto.randomUUID()}`),
+    images: [{ upload_id: uploadId, url }],
+  };
+  expect(
+    (
+      await other.client.post(`${baseURL}/properties`, {
+        data: managedListing,
+      })
+    ).status(),
+  ).toBe(400);
+  expect(
+    (
+      await owner.client.post(`${baseURL}/properties`, {
+        data: {
+          ...managedListing,
+          images: [managedListing.images[0], managedListing.images[0]],
+        },
+      })
+    ).status(),
+  ).toBe(400);
+  const created = await owner.client.post(`${baseURL}/properties`, {
+    data: managedListing,
+  });
+  expect(created.status(), await created.text()).toBe(200);
+  const property = await created.json();
+  expect(
+    execFileSync(
+      "psql",
+      [
+        database,
+        "-tAc",
+        `SELECT status || ':' || property_id FROM image_uploads WHERE id='${uploadId}'`,
+      ],
+      { encoding: "utf8" },
+    ).trim(),
+  ).toBe(`attached:${property.id}`);
+  const update = await owner.client.put(
+    `${baseURL}/properties/${property.id}`,
+    { data: listing("Managed photo removed from this property") },
+  );
+  expect(update.status(), await update.text()).toBe(200);
+  expect(
+    execFileSync(
+      "psql",
+      [
+        database,
+        "-tAc",
+        `SELECT status FROM image_uploads WHERE id='${uploadId}'`,
+      ],
+      { encoding: "utf8" },
+    ).trim(),
+  ).toBe("pending_delete");
+  expect(
+    Number(
+      execFileSync(
+        "psql",
+        [
+          database,
+          "-tAc",
+          `SELECT count(*) FROM property_images WHERE property_id='${property.id}' AND upload_id IS NOT NULL`,
+        ],
+        { encoding: "utf8" },
+      ).trim(),
+    ),
+  ).toBe(0);
+  await owner.client.dispose();
+  await other.client.dispose();
 });
