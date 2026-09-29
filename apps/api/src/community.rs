@@ -4,6 +4,7 @@ use crate::{
     pagination::{Page, cursor},
 };
 use actix_web::{HttpRequest, HttpResponse, web};
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::{PgPool, Postgres, QueryBuilder};
@@ -146,10 +147,49 @@ pub async fn dashboard_summary(
 pub async fn saved_properties(
     req: HttpRequest,
     pool: web::Data<PgPool>,
+    page: web::Query<Page>,
 ) -> Result<HttpResponse, ApiError> {
     let user = auth::current(&req, &pool).await?;
-    let data:Vec<Value>=sqlx::query_scalar(&format!("{} JOIN favorites f ON f.property_id=p.id WHERE f.user_id=$1 AND p.status='active' ORDER BY f.created_at DESC LIMIT 100",crate::properties::repository::CARD)).bind(user.id).fetch_all(pool.get_ref()).await?;
-    Ok(HttpResponse::Ok().json(data))
+    let limit = page.limit();
+    let mut query: QueryBuilder<Postgres> = QueryBuilder::new(
+        "SELECT f.property_id,f.created_at FROM favorites f JOIN properties p ON p.id=f.property_id WHERE f.user_id=",
+    );
+    query.push_bind(user.id).push(" AND p.status='active'");
+    if let Some((created_at, id)) = page.decoded_cursor()? {
+        query
+            .push(" AND (f.created_at,f.property_id)<(")
+            .push_bind(created_at)
+            .push(",")
+            .push_bind(id)
+            .push(")");
+    }
+    query
+        .push(" ORDER BY f.created_at DESC,f.property_id DESC LIMIT ")
+        .push_bind(limit + 1);
+    let mut saved: Vec<(Uuid, DateTime<Utc>)> =
+        query.build_query_as().fetch_all(pool.get_ref()).await?;
+    let more = saved.len() > limit as usize;
+    saved.truncate(limit as usize);
+    let next_cursor = if more {
+        saved
+            .last()
+            .map(|(id, created_at)| cursor(&created_at.to_rfc3339(), &id.to_string()))
+    } else {
+        None
+    };
+    let ids: Vec<Uuid> = saved.into_iter().map(|(id, _)| id).collect();
+    let data: Vec<Value> = if ids.is_empty() {
+        Vec::new()
+    } else {
+        sqlx::query_scalar(&format!(
+            "{} WHERE p.id=ANY($1) ORDER BY array_position($1,p.id)",
+            crate::properties::repository::CARD
+        ))
+        .bind(&ids)
+        .fetch_all(pool.get_ref())
+        .await?
+    };
+    Ok(HttpResponse::Ok().json(json!({"data":data,"next_cursor":next_cursor})))
 }
 
 pub async fn amenities(pool: web::Data<PgPool>) -> Result<HttpResponse, ApiError> {

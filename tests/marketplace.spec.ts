@@ -115,9 +115,8 @@ test("ownership, publishing, search, favorites, inquiries and session revocation
     await (await seeker.client.get(`${baseURL}/favorites`)).json(),
   ).toEqual([property.id]);
   expect(
-    (
-      await (await seeker.client.get(`${baseURL}/favorites/properties`)).json()
-    )[0].id,
+    (await (await seeker.client.get(`${baseURL}/favorites/properties`)).json())
+      .data[0].id,
   ).toBe(property.id);
   expect(
     (
@@ -217,6 +216,25 @@ test("stable keyset pagination across equal prices and dates", async () => {
     expect(new Set(seen).size).toBe(3);
     expect(seen.sort()).toEqual(ids.sort());
   }
+  for (const id of ids) {
+    expect(
+      (await owner.client.put(`${baseURL}/favorites/${id}`)).status(),
+    ).toBe(204);
+  }
+  let savedCursor: string | null = null;
+  const savedIds: string[] = [];
+  for (let page = 0; page < 4; page++) {
+    const response = await owner.client.get(`${baseURL}/favorites/properties`, {
+      params: { limit: "1", ...(savedCursor ? { cursor: savedCursor } : {}) },
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    const value = await response.json();
+    savedIds.push(...value.data.map((property: any) => property.id));
+    savedCursor = value.next_cursor;
+    if (!savedCursor) break;
+  }
+  expect(new Set(savedIds).size).toBe(3);
+  expect(savedIds.sort()).toEqual(ids.sort());
   let dashboardCursor: string | null = null;
   const dashboardIds: string[] = [];
   for (let page = 0; page < 4; page++) {
