@@ -4,6 +4,7 @@ mod auth;
 mod community;
 mod error;
 mod images;
+mod pagination;
 mod properties;
 mod security;
 use actix_web::{

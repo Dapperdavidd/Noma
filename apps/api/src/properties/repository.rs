@@ -2,6 +2,7 @@ use super::dto::{Listing, ListingImage, Search, Status};
 use crate::{
     auth,
     error::{ApiError, bad},
+    pagination::{Page, cursor},
 };
 use actix_web::http::StatusCode;
 use serde_json::{Value, json};
@@ -331,12 +332,33 @@ pub async fn transition(
     tx.commit().await?;
     Ok(())
 }
-pub async fn mine(pool: &PgPool, user_id: Uuid) -> Result<Value, ApiError> {
-    let data: Vec<Value> = sqlx::query_scalar(&format!(
-        "{CARD} WHERE p.agent_id=$1 ORDER BY p.created_at DESC LIMIT 100"
-    ))
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-    Ok(json!({"data":data}))
+pub async fn mine(pool: &PgPool, user_id: Uuid, page: &Page) -> Result<Value, ApiError> {
+    let limit = page.limit();
+    let mut query: QueryBuilder<Postgres> = QueryBuilder::new(CARD);
+    query.push(" WHERE p.agent_id=").push_bind(user_id);
+    if let Some((created_at, id)) = page.decoded_cursor()? {
+        query
+            .push(" AND (p.created_at,p.id)<(")
+            .push_bind(created_at)
+            .push(",")
+            .push_bind(id)
+            .push(")");
+    }
+    query
+        .push(" ORDER BY p.created_at DESC,p.id DESC LIMIT ")
+        .push_bind(limit + 1);
+    let mut data: Vec<Value> = query.build_query_scalar().fetch_all(pool).await?;
+    let more = data.len() > limit as usize;
+    data.truncate(limit as usize);
+    let next_cursor = if more {
+        data.last().and_then(|property| {
+            Some(cursor(
+                property["created_at"].as_str()?,
+                property["id"].as_str()?,
+            ))
+        })
+    } else {
+        None
+    };
+    Ok(json!({"data":data,"next_cursor":next_cursor}))
 }

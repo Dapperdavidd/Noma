@@ -28,7 +28,7 @@ Serve frontend and API behind one HTTPS origin in production. Set proxy timeouts
 
 ## Operational gaps
 
-This is the initial product foundation. Signed Cloudinary uploads are implemented and live-provider verified. Email verification and password recovery are deferred with Google authentication. The initial audited moderation queue is implemented. Complete location coverage, cursor pagination for large agent dashboards, session cleanup scheduling and observability require follow-up before public launch. Current dashboard and saved-card endpoints are capped at 100 rows. Property view analytics are intentionally deferred until privacy and retention requirements are defined.
+This is the initial product foundation. Signed Cloudinary uploads are implemented and live-provider verified. Email verification and password recovery are deferred with Google authentication. The initial audited moderation queue is implemented. Agent properties and inquiries use stable cursor pagination with separate aggregate counts. Complete location coverage, saved-property pagination, session cleanup scheduling and observability require follow-up before public launch. The saved-card endpoint is currently capped at 100 rows. Property view analytics are intentionally deferred until privacy and retention requirements are defined.
 
 ## Module boundaries
 

@@ -127,12 +127,46 @@ test("ownership, publishing, search, favorites, inquiries and session revocation
       )
     ).status(),
   ).toBe(201);
+  for (const message of [
+    "Is the service charge included in the advertised price?",
+    "Please share the earliest available inspection time.",
+  ]) {
+    expect(
+      (
+        await seeker.client.post(
+          `${baseURL}/properties/${property.id}/inquiries`,
+          { data: { message } },
+        )
+      ).status(),
+    ).toBe(201);
+  }
+  let inquiryCursor: string | null = null;
+  const inquiryIds: string[] = [];
+  for (let page = 0; page < 4; page++) {
+    const response = await owner.client.get(`${baseURL}/dashboard/inquiries`, {
+      params: {
+        limit: "1",
+        ...(inquiryCursor ? { cursor: inquiryCursor } : {}),
+      },
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    const value = await response.json();
+    expect(value.data[0].email).toBe(seeker.email);
+    inquiryIds.push(...value.data.map((lead: any) => lead.id));
+    inquiryCursor = value.next_cursor;
+    if (!inquiryCursor) break;
+  }
+  expect(new Set(inquiryIds).size).toBe(3);
   expect(
-    (await (await owner.client.get(`${baseURL}/dashboard/inquiries`)).json())[0]
-      .email,
-  ).toBe(seeker.email);
+    await (await owner.client.get(`${baseURL}/dashboard/summary`)).json(),
+  ).toEqual({
+    total_properties: 1,
+    active_properties: 1,
+    inquiries: 3,
+  });
   expect(
-    await (await other.client.get(`${baseURL}/dashboard/inquiries`)).json(),
+    (await (await other.client.get(`${baseURL}/dashboard/inquiries`)).json())
+      .data,
   ).toEqual([]);
   expect(
     (
@@ -183,8 +217,37 @@ test("stable keyset pagination across equal prices and dates", async () => {
     expect(new Set(seen).size).toBe(3);
     expect(seen.sort()).toEqual(ids.sort());
   }
+  let dashboardCursor: string | null = null;
+  const dashboardIds: string[] = [];
+  for (let page = 0; page < 4; page++) {
+    const response = await owner.client.get(`${baseURL}/dashboard/properties`, {
+      params: {
+        limit: "1",
+        ...(dashboardCursor ? { cursor: dashboardCursor } : {}),
+      },
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    const value = await response.json();
+    dashboardIds.push(...value.data.map((property: any) => property.id));
+    dashboardCursor = value.next_cursor;
+    if (!dashboardCursor) break;
+  }
+  expect(new Set(dashboardIds).size).toBe(3);
+  expect(dashboardIds.sort()).toEqual(ids.sort());
+  expect(
+    await (await owner.client.get(`${baseURL}/dashboard/summary`)).json(),
+  ).toEqual({
+    total_properties: 3,
+    active_properties: 3,
+    inquiries: 0,
+  });
   expect(
     (await owner.client.get(`${baseURL}/properties?cursor=broken`)).status(),
+  ).toBe(400);
+  expect(
+    (
+      await owner.client.get(`${baseURL}/dashboard/properties?cursor=broken`)
+    ).status(),
   ).toBe(400);
   await owner.client.dispose();
 });
@@ -450,7 +513,7 @@ test("agent profiles, amenities, inquiry statuses and administrator boundaries",
   expect(
     (
       await seeker.client.patch(
-        `${baseURL}/dashboard/inquiries/${leads[0].id}`,
+        `${baseURL}/dashboard/inquiries/${leads.data[0].id}`,
         { data: { status: "closed" } },
       )
     ).status(),
@@ -458,7 +521,7 @@ test("agent profiles, amenities, inquiry statuses and administrator boundaries",
   expect(
     (
       await owner.client.patch(
-        `${baseURL}/dashboard/inquiries/${leads[0].id}`,
+        `${baseURL}/dashboard/inquiries/${leads.data[0].id}`,
         { data: { status: "contacted" } },
       )
     ).status(),

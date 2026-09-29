@@ -1,11 +1,12 @@
 use crate::{
     auth,
     error::{ApiError, bad},
+    pagination::{Page, cursor},
 };
 use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
-use serde_json::Value;
-use sqlx::PgPool;
+use serde_json::{Value, json};
+use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 pub async fn locations(pool: web::Data<PgPool>) -> Result<HttpResponse, ApiError> {
     let data:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',s.id,'name',s.name,'cities',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',c.id,'name',c.name,'areas',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',a.id,'name',a.name) ORDER BY a.name) FROM areas a WHERE a.city_id=c.id),'[]'::jsonb)) ORDER BY c.name) FROM cities c WHERE c.state_id=s.id),'[]'::jsonb)) FROM states s ORDER BY s.name").fetch_all(pool.get_ref()).await?;
@@ -89,10 +90,57 @@ pub async fn inquire(
         .await?;
     Ok(HttpResponse::Created().finish())
 }
-pub async fn leads(req: HttpRequest, pool: web::Data<PgPool>) -> Result<HttpResponse, ApiError> {
+pub async fn leads(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    page: web::Query<Page>,
+) -> Result<HttpResponse, ApiError> {
     let user = auth::current(&req, &pool).await?;
-    let data:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',i.id,'message',i.message,'status',i.status,'created_at',i.created_at,'property',p.title,'name',u.first_name || ' ' || u.last_name,'email',u.email) FROM inquiries i JOIN properties p ON p.id=i.property_id JOIN users u ON u.id=i.user_id WHERE p.agent_id=$1 ORDER BY i.created_at DESC LIMIT 100").bind(user.id).fetch_all(pool.get_ref()).await?;
-    Ok(HttpResponse::Ok().json(data))
+    let limit = page.limit();
+    let mut query: QueryBuilder<Postgres> = QueryBuilder::new(
+        "SELECT jsonb_build_object('id',i.id,'message',i.message,'status',i.status,'created_at',i.created_at,'property',p.title,'name',u.first_name || ' ' || u.last_name,'email',u.email) FROM inquiries i JOIN properties p ON p.id=i.property_id JOIN users u ON u.id=i.user_id WHERE p.agent_id=",
+    );
+    query.push_bind(user.id);
+    if let Some((created_at, id)) = page.decoded_cursor()? {
+        query
+            .push(" AND (i.created_at,i.id)<(")
+            .push_bind(created_at)
+            .push(",")
+            .push_bind(id)
+            .push(")");
+    }
+    query
+        .push(" ORDER BY i.created_at DESC,i.id DESC LIMIT ")
+        .push_bind(limit + 1);
+    let mut data: Vec<Value> = query.build_query_scalar().fetch_all(pool.get_ref()).await?;
+    let more = data.len() > limit as usize;
+    data.truncate(limit as usize);
+    let next_cursor = if more {
+        data.last()
+            .and_then(|lead| Some(cursor(lead["created_at"].as_str()?, lead["id"].as_str()?)))
+    } else {
+        None
+    };
+    Ok(HttpResponse::Ok().json(json!({"data":data,"next_cursor":next_cursor})))
+}
+
+pub async fn dashboard_summary(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, ApiError> {
+    let user = auth::current(&req, &pool).await?;
+    let (total_properties, active_properties, inquiries): (i64, i64, i64) =
+        sqlx::query_as(
+            "SELECT COUNT(*)::bigint, COUNT(*) FILTER (WHERE status='active')::bigint, (SELECT COUNT(*)::bigint FROM inquiries i JOIN properties owned ON owned.id=i.property_id WHERE owned.agent_id=$1) FROM properties WHERE agent_id=$1",
+        )
+        .bind(user.id)
+        .fetch_one(pool.get_ref())
+        .await?;
+    Ok(HttpResponse::Ok().json(json!({
+        "total_properties": total_properties,
+        "active_properties": active_properties,
+        "inquiries": inquiries,
+    })))
 }
 
 pub async fn saved_properties(
@@ -142,5 +190,6 @@ pub fn routes(cfg: &mut web::ServiceConfig) {
         .route("/favorites/{id}", web::put().to(favorite))
         .route("/favorites/{id}", web::delete().to(favorite))
         .route("/properties/{id}/inquiries", web::post().to(inquire))
+        .route("/dashboard/summary", web::get().to(dashboard_summary))
         .route("/dashboard/inquiries", web::get().to(leads));
 }

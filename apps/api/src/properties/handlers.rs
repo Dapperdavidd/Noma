@@ -2,7 +2,7 @@ use super::{
     dto::{Listing, Search, Status},
     repository,
 };
-use crate::{auth, error::ApiError};
+use crate::{auth, error::ApiError, pagination::Page};
 use actix_web::{HttpRequest, HttpResponse, web};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -50,7 +50,11 @@ pub async fn status(
     repository::transition(&pool, &user, *id, &body).await?;
     Ok(HttpResponse::NoContent().finish())
 }
-pub async fn mine(req: HttpRequest, pool: web::Data<PgPool>) -> Result<HttpResponse, ApiError> {
+pub async fn mine(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    page: web::Query<Page>,
+) -> Result<HttpResponse, ApiError> {
     let user = auth::current(&req, &pool).await?;
-    Ok(HttpResponse::Ok().json(repository::mine(&pool, user.id).await?))
+    Ok(HttpResponse::Ok().json(repository::mine(&pool, user.id, &page).await?))
 }
