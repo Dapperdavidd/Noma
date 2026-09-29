@@ -10,9 +10,9 @@
   - Ownership checks, private drafts, publication, favorites, inquiry isolation and logout revocation.
   - Stable newest and price pagination across ties.
   - Invalid location hierarchy, admin role escalation and cross-origin writes.
-  - Desktop/mobile homepage, horizontal overflow and mobile navigation/search.
+  - Desktop/mobile homepage, horizontal overflow, mobile navigation/search and the advanced location/bedroom filter panel.
   - Browser registration, draft creation, publishing and detail navigation.
-  - Agent profiles, amenities, inquiry status permissions and disconnected upload behavior.
+  - Agent profiles, normalized location filters, price and bedroom ranges, amenities, inquiry status permissions and disconnected upload behavior.
   - Administrator review audit, independent verification and suspended-listing protection.
 
 ## Query plan experiment

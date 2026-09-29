@@ -14,11 +14,35 @@ pub async fn search(pool: &PgPool, query: &Search) -> Result<Value, ApiError> {
     if !["newest", "price_asc", "price_desc"].contains(&sort) {
         return Err(bad("Invalid sort order"));
     }
+    if query
+        .listing_type
+        .as_deref()
+        .is_some_and(|value| !["sale", "rent", "short_let"].contains(&value))
+        || query.property_type.as_deref().is_some_and(|value| {
+            ![
+                "apartment",
+                "house",
+                "duplex",
+                "land",
+                "commercial",
+                "office",
+            ]
+            .contains(&value)
+        })
+    {
+        return Err(bad("Invalid property or listing type"));
+    }
     if query.min_price.is_some_and(|v| v < 0)
         || query.max_price.is_some_and(|v| v < 0)
         || matches!((query.min_price,query.max_price),(Some(a),Some(b)) if a>b)
     {
         return Err(bad("Invalid price range"));
+    }
+    if query.min_bedrooms.is_some_and(|value| value < 0)
+        || query.max_bedrooms.is_some_and(|value| value < 0)
+        || matches!((query.min_bedrooms,query.max_bedrooms),(Some(a),Some(b)) if a>b)
+    {
+        return Err(bad("Invalid bedroom range"));
     }
     let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(CARD);
     qb.push(" WHERE p.status='active'");

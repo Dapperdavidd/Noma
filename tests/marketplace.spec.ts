@@ -247,6 +247,26 @@ test("homepage and mobile search remain usable", async ({ page }) => {
     .getByRole("link", { name: "Rent", exact: true })
     .click();
   await expect(page).toHaveURL(/listing_type=rent/);
+  await page.getByRole("button", { name: /More filters/ }).click();
+  await page
+    .getByRole("combobox", { name: "State", exact: true })
+    .selectOption({ label: "Lagos" });
+  await page
+    .getByRole("combobox", { name: "City", exact: true })
+    .selectOption({ label: "Lagos" });
+  await page
+    .getByRole("combobox", { name: "Area", exact: true })
+    .selectOption({ label: "Lekki Phase 1" });
+  await page
+    .getByRole("combobox", { name: "Minimum bedrooms" })
+    .selectOption("3");
+  await page.getByRole("button", { name: "Show properties" }).click();
+  await expect(page).toHaveURL(/state_id=10000000-0000-4000-8000-000000000001/);
+  await expect(page).toHaveURL(/area_id=30000000-0000-4000-8000-000000000001/);
+  await expect(page).toHaveURL(/min_bedrooms=3/);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
 });
 test("agent can register, create a draft and publish through the browser", async ({
   page,
@@ -369,6 +389,55 @@ test("agent profiles, amenities, inquiry statuses and administrator boundaries",
       ).json()
     ).data,
   ).toHaveLength(0);
+  expect(
+    (
+      await (
+        await owner.client.get(`${baseURL}/properties`, {
+          params: {
+            q: tag,
+            state_id: "10000000-0000-4000-8000-000000000001",
+            city_id: "20000000-0000-4000-8000-000000000001",
+            area_id: "30000000-0000-4000-8000-000000000001",
+            min_price: "80000000",
+            max_price: "90000000",
+            min_bedrooms: "4",
+            max_bedrooms: "4",
+            amenities: amenities[0].id,
+          },
+        })
+      ).json()
+    ).data,
+  ).toHaveLength(1);
+  expect(
+    (
+      await owner.client.get(`${baseURL}/properties`, {
+        params: { q: tag, max_price: "80000000" },
+      })
+    ).status(),
+  ).toBe(200);
+  expect(
+    (
+      await (
+        await owner.client.get(`${baseURL}/properties`, {
+          params: { q: tag, max_price: "80000000" },
+        })
+      ).json()
+    ).data,
+  ).toHaveLength(0);
+  expect(
+    (
+      await owner.client.get(`${baseURL}/properties`, {
+        params: { min_bedrooms: "5", max_bedrooms: "2" },
+      })
+    ).status(),
+  ).toBe(400);
+  expect(
+    (
+      await owner.client.get(`${baseURL}/properties`, {
+        params: { listing_type: "auction" },
+      })
+    ).status(),
+  ).toBe(400);
   await seeker.client.post(`${baseURL}/properties/${property.id}/inquiries`, {
     data: { message: "Please arrange a viewing for tomorrow." },
   });

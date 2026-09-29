@@ -9,6 +9,7 @@ import {
 import { api, type Property } from "../api";
 import { Header, Footer, Notice, SearchBar, PropertyCard } from "../components";
 import { useFavorites } from "../favorites";
+import { PropertyFilters } from "../filters";
 
 export function Browse() {
   const [params, setParams] = useSearchParams();
@@ -64,28 +65,31 @@ export function Browse() {
         <h1>Find your next chapter.</h1>
         <SearchBar key={key} />
         <div className="results-toolbar">
-          <span>
+          <span className="result-count">
             {busy
               ? "Searching…"
               : `${items.length} ${items.length === 1 ? "property" : "properties"}${cursor ? " and more" : ""}`}
           </span>
-          <label className="sort">
-            <SlidersHorizontal size={16} />
-            <select
-              aria-label="Sort properties"
-              value={params.get("sort") || "newest"}
-              onChange={(e) => {
-                const next = new URLSearchParams(params);
-                next.set("sort", e.target.value);
-                next.delete("cursor");
-                setParams(next);
-              }}
-            >
-              <option value="newest">Newest first</option>
-              <option value="price_asc">Price: low to high</option>
-              <option value="price_desc">Price: high to low</option>
-            </select>
-          </label>
+          <div className="result-controls">
+            <PropertyFilters />
+            <label className="sort">
+              <SlidersHorizontal size={16} />
+              <select
+                aria-label="Sort properties"
+                value={params.get("sort") || "newest"}
+                onChange={(e) => {
+                  const next = new URLSearchParams(params);
+                  next.set("sort", e.target.value);
+                  next.delete("cursor");
+                  setParams(next);
+                }}
+              >
+                <option value="newest">Newest first</option>
+                <option value="price_asc">Price: low to high</option>
+                <option value="price_desc">Price: high to low</option>
+              </select>
+            </label>
+          </div>
         </div>
         {error && (
           <Notice>

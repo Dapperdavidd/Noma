@@ -41,7 +41,7 @@ TEST_DATABASE_URL=postgres://noma:noma@localhost:5432/noma_test npm test
 
 ## Working flows
 
-Account registration and sign-in; property seeker and agent roles; server-side ownership checks; draft creation and editing; publish/archive/status management; search and price sorting with stable cursor pagination; property details and galleries; saved properties; inquiries and an agent dashboard. Images accept externally hosted HTTPS URLs and signed direct Cloudinary uploads when configured. No image binaries are stored in PostgreSQL.
+Account registration and sign-in; property seeker and agent roles; server-side ownership checks; draft creation and editing; publish/archive/status management; full-text search; normalized state/city/area filters; budget, bedroom and multi-amenity filters; price sorting with stable cursor pagination; property details and galleries; saved properties; inquiries and an agent dashboard. Images accept externally hosted HTTPS URLs and signed direct Cloudinary uploads when configured. No image binaries are stored in PostgreSQL.
 
 ## Before public launch
 
