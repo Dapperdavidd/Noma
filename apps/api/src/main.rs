@@ -39,7 +39,17 @@ async fn main() -> std::io::Result<()> {
         let limits = limiter.clone();
         App::new()
             .app_data(web::Data::new(pool.clone()))
-            .app_data(web::JsonConfig::default().limit(64 * 1024))
+            .app_data(
+                web::JsonConfig::default()
+                    .limit(64 * 1024)
+                    .error_handler(|_, _| {
+                        crate::error::bad("Invalid JSON request or request too large").into()
+                    }),
+            )
+            .app_data(
+                web::PathConfig::default()
+                    .error_handler(|_, _| crate::error::bad("Invalid property identifier").into()),
+            )
             .wrap(Logger::default())
             .wrap(
                 DefaultHeaders::new()

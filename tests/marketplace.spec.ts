@@ -399,7 +399,8 @@ test("administrator review is audited and verification stays independent", async
   const administrator = await account();
   const owner = await account();
   const database =
-    process.env.TEST_DATABASE_URL || "postgres://mac@localhost:5432/noma_test";
+    process.env.TEST_DATABASE_URL ||
+    "postgres://noma:noma@localhost:5432/noma_test";
   if (new URL(database).pathname !== "/noma_test")
     throw new Error(
       "Administrator fixture requires the isolated noma_test database",
@@ -499,5 +500,18 @@ test("administrator review is audited and verification stays independent", async
   );
   expect(Number(audit.trim())).toBe(3);
   await administrator.client.dispose();
+  await owner.client.dispose();
+});
+
+test("malformed edit identifiers cannot create a new property", async () => {
+  const owner = await account();
+  const response = await owner.client.put(`${baseURL}/properties/not-a-uuid`, {
+    data: listing("This edit must never create a listing"),
+  });
+  expect(response.status()).toBe(400);
+  expect(
+    (await (await owner.client.get(`${baseURL}/dashboard/properties`)).json())
+      .data,
+  ).toHaveLength(0);
   await owner.client.dispose();
 });

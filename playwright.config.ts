@@ -1,4 +1,11 @@
 import { defineConfig } from "@playwright/test";
+const testDatabase =
+  process.env.TEST_DATABASE_URL ||
+  "postgres://noma:noma@localhost:5432/noma_test";
+if (new URL(testDatabase).pathname !== "/noma_test")
+  throw new Error(
+    "Integration tests require an isolated database named noma_test",
+  );
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: false,
@@ -16,9 +23,11 @@ export default defineConfig({
       timeout: 180000,
       reuseExistingServer: !process.env.CI,
       env: {
-        DATABASE_URL:
-          process.env.TEST_DATABASE_URL ||
-          "postgres://mac@localhost:5432/noma_test",
+        DATABASE_URL: testDatabase,
+        CLOUDINARY_CLOUD_NAME: "",
+        CLOUDINARY_API_KEY: "",
+        CLOUDINARY_API_SECRET: "",
+        CLOUDINARY_UPLOAD_PRESET: "",
         API_BIND: "127.0.0.1:8081",
         WEB_ORIGIN: "http://localhost:5174",
         COOKIE_SECURE: "false",

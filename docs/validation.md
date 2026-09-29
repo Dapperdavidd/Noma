@@ -5,7 +5,8 @@
 - React/TypeScript production bundle builds successfully.
 - Rust formatter and Clippy pass with warnings treated as errors.
 - Two Rust unit tests cover request limiting and signature determinism.
-- Seven Playwright integration/browser scenarios pass against a real PostgreSQL test database:
+- Eight Playwright integration/browser scenarios pass against a real PostgreSQL test database:
+  - Malformed edit identifiers cannot fall through to property creation.
   - Ownership checks, private drafts, publication, favorites, inquiry isolation and logout revocation.
   - Stable newest and price pagination across ties.
   - Invalid location hierarchy, admin role escalation and cross-origin writes.

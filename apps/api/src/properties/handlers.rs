@@ -23,14 +23,22 @@ pub async fn detail(
             .json(repository::detail(&pool, slug.into_inner(), owner.as_ref()).await?),
     )
 }
-pub async fn save(
+pub async fn create(
     req: HttpRequest,
     pool: web::Data<PgPool>,
-    path: Option<web::Path<Uuid>>,
     body: web::Json<Listing>,
 ) -> Result<HttpResponse, ApiError> {
     let user = auth::current(&req, &pool).await?;
-    Ok(HttpResponse::Ok().json(repository::save(&pool, &user, path.map(|p| *p), &body).await?))
+    Ok(HttpResponse::Ok().json(repository::save(&pool, &user, None, &body).await?))
+}
+pub async fn update(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+    body: web::Json<Listing>,
+) -> Result<HttpResponse, ApiError> {
+    let user = auth::current(&req, &pool).await?;
+    Ok(HttpResponse::Ok().json(repository::save(&pool, &user, Some(*id), &body).await?))
 }
 pub async fn status(
     req: HttpRequest,
