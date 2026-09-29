@@ -17,7 +17,7 @@ npm run dev
 
 Open http://localhost:5173. The API listens on http://127.0.0.1:8080. Vite proxies `/api` to the API. SQL migrations run at API startup. Configure `DATABASE_URL` for your own PostgreSQL installation if not using Docker. Never commit `.env`.
 
-The launch location catalog contains Lagos, Abuja, and Port Harcourt with selected areas. No fake accounts or live properties are seeded. The homepage displays clearly labeled illustrative cards until real listings exist. Register an agent account to create a draft, then publish from the dashboard.
+The location catalog includes all 36 states and the Federal Capital Territory, with one primary city in each and selected launch areas in Lagos, Abuja, and Port Harcourt. No fake accounts or live properties are seeded. The homepage displays clearly labeled illustrative cards until real listings exist. Register an agent account to create a draft, then publish from the dashboard.
 
 ## Structure
 

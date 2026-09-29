@@ -10,7 +10,7 @@
   - Managed photo ownership, duplicate attachment prevention and removal queuing.
   - Ownership checks, private drafts, publication, favorites, inquiry isolation and logout revocation.
   - Stable newest and price pagination across ties.
-  - Invalid location hierarchy, admin role escalation and cross-origin writes.
+  - National state/primary-city coverage, invalid location hierarchy, admin role escalation and cross-origin writes.
   - Desktop/mobile homepage, horizontal overflow, mobile navigation/search and the advanced location/bedroom filter panel.
   - Browser registration, draft creation, publishing and detail navigation.
   - Agent profiles, normalized location filters, price and bedroom ranges, amenities, inquiry status permissions and disconnected upload behavior.

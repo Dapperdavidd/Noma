@@ -271,6 +271,14 @@ test("stable keyset pagination across equal prices and dates", async () => {
 });
 test("invalid location hierarchy, privilege escalation and cross-origin mutations are rejected", async () => {
   const owner = await account();
+  const locations = await (
+    await owner.client.get(`${baseURL}/locations`)
+  ).json();
+  expect(locations).toHaveLength(37);
+  expect(locations.every((state: any) => state.cities.length >= 1)).toBe(true);
+  expect(locations.map((state: any) => state.name)).toEqual(
+    [...locations.map((state: any) => state.name)].sort(),
+  );
   const data = listing("Invalid location property");
   data.state_id = "10000000-0000-4000-8000-000000000002";
   expect(

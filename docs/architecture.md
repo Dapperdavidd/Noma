@@ -28,7 +28,7 @@ Serve frontend and API behind one HTTPS origin in production. Set proxy timeouts
 
 ## Operational gaps
 
-This is the initial product foundation. Signed Cloudinary uploads are implemented and live-provider verified. Email verification and password recovery are deferred with Google authentication. The initial audited moderation queue is implemented. Agent properties, inquiries and saved homes use stable cursor pagination, with separate aggregate counts for the agent dashboard. Expired sessions are removed hourly in bounded batches. Complete location coverage and production observability require follow-up before public launch. Property view analytics are intentionally deferred until privacy and retention requirements are defined.
+This is the initial product foundation. Signed Cloudinary uploads are implemented and live-provider verified. Email verification and password recovery are deferred with Google authentication. The initial audited moderation queue is implemented. Agent properties, inquiries and saved homes use stable cursor pagination, with separate aggregate counts for the agent dashboard. Expired sessions are removed hourly in bounded batches. Every state and the FCT have a primary market; detailed city and area coverage remains curated. Production observability requires follow-up before public launch. Property view analytics are intentionally deferred until privacy and retention requirements are defined.
 
 ## Module boundaries
 
