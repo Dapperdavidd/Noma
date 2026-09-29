@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
+
+const SESSION_CLEANUP_BATCH: u64 = 1_000;
+const SESSION_CLEANUP_BATCHES: usize = 10;
 #[derive(Serialize, FromRow)]
 pub struct User {
     pub id: Uuid,
@@ -31,11 +34,46 @@ pub struct Credentials {
 fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
+
+async fn cleanup_expired_sessions(pool: &PgPool) -> Result<u64, sqlx::Error> {
+    let mut deleted = 0;
+    for _ in 0..SESSION_CLEANUP_BATCHES {
+        let result = sqlx::query(
+            "WITH expired AS (SELECT token_hash FROM sessions WHERE expires_at<=now() ORDER BY expires_at LIMIT $1) DELETE FROM sessions s USING expired WHERE s.token_hash=expired.token_hash",
+        )
+        .bind(SESSION_CLEANUP_BATCH as i64)
+        .execute(pool)
+        .await?;
+        deleted += result.rows_affected();
+        if result.rows_affected() < SESSION_CLEANUP_BATCH {
+            break;
+        }
+    }
+    Ok(deleted)
+}
+
+pub fn spawn_session_cleanup(pool: PgPool) {
+    actix_web::rt::spawn(async move {
+        let mut schedule = actix_web::rt::time::interval(std::time::Duration::from_secs(60 * 60));
+        loop {
+            schedule.tick().await;
+            match cleanup_expired_sessions(&pool).await {
+                Ok(deleted) if deleted > 0 => {
+                    tracing::info!(deleted, "Expired sessions removed")
+                }
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "Expired session cleanup failed"),
+            }
+        }
+    });
+}
+
 pub async fn current(req: &HttpRequest, pool: &PgPool) -> Result<User, ApiError> {
     let token = req.cookie("noma_session").ok_or_else(unauthorized)?;
     let user=sqlx::query_as::<_,User>("SELECT u.id,u.email,u.first_name,u.last_name,u.role FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=$1 AND s.expires_at>now() AND u.is_active").bind(hash_token(token.value())).fetch_optional(pool).await?.ok_or_else(unauthorized)?;
     Ok(user)
 }
+
 fn session_cookie(token: String) -> Cookie<'static> {
     Cookie::build("noma_session", token)
         .path("/")

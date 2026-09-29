@@ -31,6 +31,7 @@ async fn main() -> std::io::Result<()> {
         .run(&pool)
         .await
         .expect("Database migrations failed");
+    auth::spawn_session_cleanup(pool.clone());
     let origin = std::env::var("WEB_ORIGIN").unwrap_or_else(|_| "http://localhost:5173".into());
     let bind = std::env::var("API_BIND").unwrap_or_else(|_| "127.0.0.1:8080".into());
     tracing::info!(%bind,"NOMA API starting");

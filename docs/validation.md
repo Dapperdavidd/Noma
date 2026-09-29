@@ -4,7 +4,7 @@
 
 - React/TypeScript production bundle builds successfully.
 - Rust formatter and Clippy pass with warnings treated as errors.
-- Two Rust unit tests cover request limiting and signature determinism.
+- Three Rust unit tests cover request limiting, signature determinism and cursor parsing.
 - Nine Playwright integration/browser scenarios pass against a real PostgreSQL test database:
   - Malformed edit identifiers cannot fall through to property creation.
   - Managed photo ownership, duplicate attachment prevention and removal queuing.
