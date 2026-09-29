@@ -1,0 +1,503 @@
+import { execFileSync } from "node:child_process";
+import {
+  test,
+  expect,
+  request,
+  type APIRequestContext,
+} from "@playwright/test";
+const baseURL = "http://127.0.0.1:8081/api/v1";
+const origin = "http://localhost:5174";
+async function account(role = "agent") {
+  const client = await request.newContext({
+    baseURL,
+    extraHTTPHeaders: { Origin: origin },
+  });
+  const email = `test-${crypto.randomUUID()}@example.test`;
+  const response = await client.post(`${baseURL}/auth/register`, {
+    data: {
+      email,
+      password: "Integration-test-passphrase!",
+      first_name: "Noma",
+      last_name: "Tester",
+      role,
+    },
+  });
+  expect(response.status(), await response.text()).toBe(200);
+  return { client, email, user: await response.json() };
+}
+const listing = (title: string) => ({
+  title,
+  description:
+    "A spacious home with plenty of natural light and a private courtyard.",
+  listing_type: "sale",
+  property_type: "house",
+  price: 85000000,
+  bedrooms: 4,
+  bathrooms: 4,
+  size_sqm: 320,
+  state_id: "10000000-0000-4000-8000-000000000001",
+  city_id: "20000000-0000-4000-8000-000000000001",
+  area_id: "30000000-0000-4000-8000-000000000001",
+  address: "12 Test Street",
+  images: [
+    "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=900&q=80",
+  ],
+});
+async function create(client: APIRequestContext, title: string) {
+  const response = await client.post(`${baseURL}/properties`, {
+    data: listing(title),
+  });
+  expect(response.status(), await response.text()).toBe(200);
+  return response.json();
+}
+test("ownership, publishing, search, favorites, inquiries and session revocation", async () => {
+  const owner = await account();
+  const other = await account();
+  const seeker = await account("user");
+  const anonymous = await request.newContext();
+  const tag = `Noma-${crypto.randomUUID()}`;
+  const property = await create(owner.client, tag);
+  expect(
+    (await anonymous.get(`${baseURL}/properties/${property.slug}`)).status(),
+  ).toBe(404);
+  expect(
+    (await owner.client.get(`${baseURL}/properties/${property.slug}`)).status(),
+  ).toBe(200);
+  expect(
+    (
+      await other.client.put(`${baseURL}/properties/${property.id}`, {
+        data: listing("Attempted unauthorized edit"),
+      })
+    ).status(),
+  ).toBe(403);
+  expect(
+    (
+      await seeker.client.post(`${baseURL}/properties`, {
+        data: listing("A seeker cannot publish"),
+      })
+    ).status(),
+  ).toBe(403);
+  expect(
+    (
+      await other.client.patch(`${baseURL}/properties/${property.id}/status`, {
+        data: { status: "active" },
+      })
+    ).status(),
+  ).toBe(403);
+  expect(
+    (
+      await owner.client.patch(`${baseURL}/properties/${property.id}/status`, {
+        data: { status: "active" },
+      })
+    ).status(),
+  ).toBe(204);
+  const details = await anonymous.get(`${baseURL}/properties/${property.slug}`);
+  expect(details.status()).toBe(200);
+  const payload = await details.json();
+  expect(payload.agent.email).toBeUndefined();
+  expect(payload.password_hash).toBeUndefined();
+  const search = await anonymous.get(`${baseURL}/properties`, {
+    params: { q: tag },
+  });
+  expect((await search.json()).data.map((p: any) => p.id)).toContain(
+    property.id,
+  );
+  expect(
+    (await seeker.client.put(`${baseURL}/favorites/${property.id}`)).status(),
+  ).toBe(204);
+  expect(
+    (await seeker.client.put(`${baseURL}/favorites/${property.id}`)).status(),
+  ).toBe(204);
+  expect(
+    await (await seeker.client.get(`${baseURL}/favorites`)).json(),
+  ).toEqual([property.id]);
+  expect(
+    (
+      await (await seeker.client.get(`${baseURL}/favorites/properties`)).json()
+    )[0].id,
+  ).toBe(property.id);
+  expect(
+    (
+      await seeker.client.post(
+        `${baseURL}/properties/${property.id}/inquiries`,
+        { data: { message: "Can I arrange a viewing this weekend?" } },
+      )
+    ).status(),
+  ).toBe(201);
+  expect(
+    (await (await owner.client.get(`${baseURL}/dashboard/inquiries`)).json())[0]
+      .email,
+  ).toBe(seeker.email);
+  expect(
+    await (await other.client.get(`${baseURL}/dashboard/inquiries`)).json(),
+  ).toEqual([]);
+  expect(
+    (
+      await owner.client.patch(`${baseURL}/properties/${property.id}/status`, {
+        data: { status: "suspended" },
+      })
+    ).status(),
+  ).toBe(403);
+  expect((await owner.client.post(`${baseURL}/auth/logout`)).status()).toBe(
+    204,
+  );
+  expect((await owner.client.get(`${baseURL}/auth/me`)).status()).toBe(401);
+  await Promise.all([
+    owner.client.dispose(),
+    other.client.dispose(),
+    seeker.client.dispose(),
+    anonymous.dispose(),
+  ]);
+});
+test("stable keyset pagination across equal prices and dates", async () => {
+  const owner = await account();
+  const tag = `Pagination-${crypto.randomUUID()}`;
+  const ids = [];
+  for (let i = 0; i < 3; i++) {
+    const p = await create(owner.client, `${tag} home ${i}`);
+    ids.push(p.id);
+    expect(
+      (
+        await owner.client.patch(`${baseURL}/properties/${p.id}/status`, {
+          data: { status: "active" },
+        })
+      ).status(),
+    ).toBe(204);
+  }
+  for (const sort of ["newest", "price_asc", "price_desc"]) {
+    let cursor: string | null = null;
+    const seen: string[] = [];
+    for (let page = 0; page < 4; page++) {
+      const response = await owner.client.get(`${baseURL}/properties`, {
+        params: { q: tag, sort, limit: "1", ...(cursor ? { cursor } : {}) },
+      });
+      expect(response.status(), await response.text()).toBe(200);
+      const value = await response.json();
+      seen.push(...value.data.map((p: any) => p.id));
+      cursor = value.next_cursor;
+      if (!cursor) break;
+    }
+    expect(new Set(seen).size).toBe(3);
+    expect(seen.sort()).toEqual(ids.sort());
+  }
+  expect(
+    (await owner.client.get(`${baseURL}/properties?cursor=broken`)).status(),
+  ).toBe(400);
+  await owner.client.dispose();
+});
+test("invalid location hierarchy, privilege escalation and cross-origin mutations are rejected", async () => {
+  const owner = await account();
+  const data = listing("Invalid location property");
+  data.state_id = "10000000-0000-4000-8000-000000000002";
+  expect(
+    (await owner.client.post(`${baseURL}/properties`, { data })).status(),
+  ).toBe(400);
+  expect(
+    (
+      await owner.client.post(`${baseURL}/auth/register`, {
+        data: {
+          email: "admin@example.test",
+          password: "This-is-not-an-admin-password",
+          first_name: "Fake",
+          last_name: "Admin",
+          role: "admin",
+        },
+      })
+    ).status(),
+  ).toBe(400);
+  expect(
+    (
+      await owner.client.post(`${baseURL}/properties`, {
+        data: listing("Rejected cross-origin listing"),
+        headers: { Origin: "https://evil.example" },
+      })
+    ).status(),
+  ).toBe(403);
+  await owner.client.dispose();
+});
+test("homepage and mobile search remain usable", async ({ page }) => {
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Find a place that feels right." }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/home-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Search properties" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
+  await page.screenshot({
+    path: "test-results/home-mobile.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await expect(
+    page
+      .getByRole("navigation")
+      .getByRole("link", { name: "Rent", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "Rent", exact: true })
+    .click();
+  await expect(page).toHaveURL(/listing_type=rent/);
+});
+test("agent can register, create a draft and publish through the browser", async ({
+  page,
+}) => {
+  await page.goto("/join?role=agent");
+  await page.getByLabel("First name").fill("Browser");
+  await page.getByLabel("Last name").fill("Tester");
+  await page
+    .getByLabel("Email address")
+    .fill(`browser-${crypto.randomUUID()}@example.test`);
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("Browser-test-passphrase!");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page).toHaveURL("/dashboard");
+  await page.getByRole("link", { name: "New property", exact: true }).click();
+  await page
+    .getByLabel("Property title")
+    .fill("A browser-tested home in Lekki");
+  await page
+    .getByLabel("Description", { exact: true })
+    .fill(
+      "A spacious home with natural light, generous rooms and a peaceful garden.",
+    );
+  await page.getByLabel("Price (₦)").fill("65000000");
+  await page
+    .getByRole("combobox", { name: "State", exact: true })
+    .selectOption({ label: "Lagos" });
+  await page
+    .getByRole("combobox", { name: "City", exact: true })
+    .selectOption({ label: "Lagos" });
+  await page
+    .getByRole("combobox", { name: "Area", exact: true })
+    .selectOption({ label: "Lekki Phase 1" });
+  await page.getByLabel("Street address").fill("20 Integration Street");
+  await page
+    .getByLabel("Property image URLs")
+    .fill("https://images.unsplash.com/photo-1600596542815-ffad4c1539a9");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page).toHaveURL("/dashboard");
+  await page
+    .getByLabel("Status of A browser-tested home in Lekki")
+    .selectOption("active");
+  await expect(page.locator(".status-pill")).toHaveText("active");
+  await page
+    .getByRole("link", { name: "A browser-tested home in Lekki" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "A browser-tested home in Lekki" }),
+  ).toBeVisible();
+});
+
+test("agent profiles, amenities, inquiry statuses and administrator boundaries", async () => {
+  const owner = await account();
+  const seeker = await account("user");
+  expect(
+    (
+      await owner.client.put(`${baseURL}/agent/profile`, {
+        data: {
+          agency_name: "NOMA Test Agency",
+          bio: "Helping people find their next chapter.",
+        },
+      })
+    ).status(),
+  ).toBe(204);
+  expect(
+    (await (await owner.client.get(`${baseURL}/agent/profile`)).json())
+      .verification_status,
+  ).toBe("pending");
+  expect(
+    (
+      await seeker.client.put(`${baseURL}/agent/profile`, {
+        data: { agency_name: "Unauthorized", bio: "" },
+      })
+    ).status(),
+  ).toBe(403);
+  expect((await owner.client.get(`${baseURL}/admin/queue`)).status()).toBe(403);
+  expect(
+    (await owner.client.post(`${baseURL}/images/signature`)).status(),
+  ).toBe(503);
+  expect(
+    (await seeker.client.post(`${baseURL}/images/signature`)).status(),
+  ).toBe(403);
+  const amenities = await (
+    await owner.client.get(`${baseURL}/amenities`)
+  ).json();
+  const tag = `Amenities-${crypto.randomUUID()}`;
+  const created = await owner.client.post(`${baseURL}/properties`, {
+    data: { ...listing(tag), amenity_ids: [amenities[0].id] },
+  });
+  expect(created.status()).toBe(200);
+  const property = await created.json();
+  expect(
+    (
+      await owner.client.patch(`${baseURL}/properties/${property.id}/status`, {
+        data: { status: "active" },
+      })
+    ).status(),
+  ).toBe(204);
+  const details = await (
+    await owner.client.get(`${baseURL}/properties/${property.slug}`)
+  ).json();
+  expect(details.amenity_ids).toEqual([amenities[0].id]);
+  expect(details.amenities).toEqual([amenities[0].name]);
+  expect(
+    (
+      await (
+        await owner.client.get(`${baseURL}/properties`, {
+          params: { q: tag, amenities: amenities[0].id },
+        })
+      ).json()
+    ).data,
+  ).toHaveLength(1);
+  expect(
+    (
+      await (
+        await owner.client.get(`${baseURL}/properties`, {
+          params: { q: tag, amenities: amenities[1].id },
+        })
+      ).json()
+    ).data,
+  ).toHaveLength(0);
+  await seeker.client.post(`${baseURL}/properties/${property.id}/inquiries`, {
+    data: { message: "Please arrange a viewing for tomorrow." },
+  });
+  const leads = await (
+    await owner.client.get(`${baseURL}/dashboard/inquiries`)
+  ).json();
+  expect(
+    (
+      await seeker.client.patch(
+        `${baseURL}/dashboard/inquiries/${leads[0].id}`,
+        { data: { status: "closed" } },
+      )
+    ).status(),
+  ).toBe(404);
+  expect(
+    (
+      await owner.client.patch(
+        `${baseURL}/dashboard/inquiries/${leads[0].id}`,
+        { data: { status: "contacted" } },
+      )
+    ).status(),
+  ).toBe(204);
+  await owner.client.dispose();
+  await seeker.client.dispose();
+});
+
+test("administrator review is audited and verification stays independent", async () => {
+  const administrator = await account();
+  const owner = await account();
+  const database =
+    process.env.TEST_DATABASE_URL || "postgres://mac@localhost:5432/noma_test";
+  if (new URL(database).pathname !== "/noma_test")
+    throw new Error(
+      "Administrator fixture requires the isolated noma_test database",
+    );
+  expect(administrator.user.id).toMatch(/^[0-9a-f-]{36}$/);
+  execFileSync("psql", [
+    database,
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-c",
+    `UPDATE users SET role='admin' WHERE id='${administrator.user.id}'`,
+  ]);
+  const property = await create(
+    owner.client,
+    `Reviewed home ${crypto.randomUUID()}`,
+  );
+  await owner.client.patch(`${baseURL}/properties/${property.id}/status`, {
+    data: { status: "active" },
+  });
+  expect(
+    (
+      await administrator.client.post(
+        `${baseURL}/admin/reviews/${owner.user.id}`,
+        {
+          data: {
+            target_type: "agent",
+            action: "verify",
+            reason: "Test identity evidence reviewed.",
+          },
+        },
+      )
+    ).status(),
+  ).toBe(204);
+  let detail = await (
+    await owner.client.get(`${baseURL}/properties/${property.slug}`)
+  ).json();
+  expect(detail.agent.verification_status).toBe("verified");
+  expect(detail.is_verified).toBe(false);
+  expect(
+    (
+      await administrator.client.post(
+        `${baseURL}/admin/reviews/${property.id}`,
+        {
+          data: {
+            target_type: "property",
+            action: "verify",
+            reason: "Test property evidence reviewed.",
+          },
+        },
+      )
+    ).status(),
+  ).toBe(204);
+  detail = await (
+    await owner.client.get(`${baseURL}/properties/${property.slug}`)
+  ).json();
+  expect(detail.is_verified).toBe(true);
+  expect(
+    (
+      await owner.client.put(`${baseURL}/properties/${property.id}`, {
+        data: listing("Updated property after verification"),
+      })
+    ).status(),
+  ).toBe(200);
+  detail = await (
+    await owner.client.get(`${baseURL}/properties/${property.slug}`)
+  ).json();
+  expect(detail.is_verified).toBe(false);
+  expect(
+    (
+      await administrator.client.post(
+        `${baseURL}/admin/reviews/${property.id}`,
+        {
+          data: {
+            target_type: "property",
+            action: "suspend",
+            reason: "Test discrepancy found in evidence.",
+          },
+        },
+      )
+    ).status(),
+  ).toBe(204);
+  expect(
+    (
+      await owner.client.patch(`${baseURL}/properties/${property.id}/status`, {
+        data: { status: "active" },
+      })
+    ).status(),
+  ).toBe(403);
+  const audit = execFileSync(
+    "psql",
+    [
+      database,
+      "-tAc",
+      `SELECT count(*) FROM moderation_events WHERE actor_id='${administrator.user.id}'`,
+    ],
+    { encoding: "utf8" },
+  );
+  expect(Number(audit.trim())).toBe(3);
+  await administrator.client.dispose();
+  await owner.client.dispose();
+});

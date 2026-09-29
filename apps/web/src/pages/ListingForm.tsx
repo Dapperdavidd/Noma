@@ -2,10 +2,15 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { api, type Property, type Location } from "../api";
+import { uploadPhoto } from "../uploads";
 import { Notice } from "../components";
 
 export function ListingForm() {
   const { slug } = useParams();
+  const [amenities, setAmenities] = useState<{ id: string; name: string }[]>(
+    [],
+  );
+  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [p, setP] = useState<Property | null>(null);
   const [state, setState] = useState("");
@@ -13,8 +18,13 @@ export function ListingForm() {
   const [type, setType] = useState("sale");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [imageUrls, setImageUrls] = useState("");
+  const [uploading, setUploading] = useState(false);
   const navigate = useNavigate();
   useEffect(() => {
+    api<{ id: string; name: string }[]>("/amenities")
+      .then(setAmenities)
+      .catch((e) => setError(e.message));
     api<Location[]>("/locations")
       .then(setLocations)
       .catch((e) => setError(e.message));
@@ -22,12 +32,34 @@ export function ListingForm() {
       api<Property>(`/properties/${slug}`)
         .then((v) => {
           setP(v);
+          setSelectedAmenities(v.amenity_ids || []);
+          setImageUrls(v.images?.map((i) => i.url).join("\n") || "");
           setState(v.state_id || "");
           setCity(v.city_id || "");
           setType(v.listing_type);
         })
         .catch((e) => setError(e.message));
   }, [slug]);
+  async function photos(files: FileList | null) {
+    if (!files) return;
+    const existing = imageUrls.split("\n").filter(Boolean);
+    if (existing.length + files.length > 20) {
+      setError("A listing can have up to 20 photos.");
+      return;
+    }
+    setUploading(true);
+    setError("");
+    try {
+      for (const file of Array.from(files)) {
+        const url = await uploadPhoto(file);
+        setImageUrls((old) => (old ? `${old}\n${url}` : url));
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -35,6 +67,7 @@ export function ListingForm() {
     const values = Object.fromEntries(new FormData(e.currentTarget));
     const body = {
       ...values,
+      amenity_ids: selectedAmenities,
       price: Number(values.price),
       bedrooms: values.bedrooms ? Number(values.bedrooms) : null,
       bathrooms: values.bathrooms ? Number(values.bathrooms) : null,
@@ -246,30 +279,60 @@ export function ListingForm() {
             03 <span>Show the space</span>
           </h2>
           <p className="muted">
-            Add HTTPS image links from your storage provider, one per line. The
-            first photo becomes the cover. Up to 20 photos.
+            Show what makes the space special. The first photo becomes the
+            cover. Add up to 20 photos.
           </p>
+          <label className="upload-zone">
+            {uploading ? "Uploading photos…" : "Upload property photos"}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/avif"
+              multiple
+              disabled={uploading}
+              onChange={(e) => void photos(e.target.files)}
+            />
+            <span>JPEG, PNG, WebP or AVIF · Up to 10 MB each</span>
+          </label>
           <label>
             Property image URLs
             <textarea
               name="images"
               rows={5}
               required
-              defaultValue={p?.images?.map((i) => i.url).join("\n")}
+              value={imageUrls}
+              onChange={(e) => setImageUrls(e.target.value)}
               placeholder="https://your-image-provider.com/property-front.jpg"
             />
           </label>
           <p className="fine-print">
-            Direct file uploads will be available once the image storage account
-            is connected.
+            You can also paste existing image links, one per line.
           </p>
+          <h2>Amenities</h2>
+          <div className="amenity-picker">
+            {amenities.map((a) => (
+              <label key={a.id}>
+                <input
+                  type="checkbox"
+                  checked={selectedAmenities.includes(a.id)}
+                  onChange={(e) =>
+                    setSelectedAmenities((old) =>
+                      e.target.checked
+                        ? [...old, a.id]
+                        : old.filter((id) => id !== a.id),
+                    )
+                  }
+                />
+                {a.name}
+              </label>
+            ))}
+          </div>
         </section>
         {error && <Notice>{error}</Notice>}
         <div className="form-actions">
           <Link className="button outline" to="/dashboard">
             Cancel
           </Link>
-          <button className="button olive" disabled={busy}>
+          <button className="button olive" disabled={busy || uploading}>
             {busy ? "Saving…" : p ? "Save changes" : "Save draft"}
             <ArrowRight size={16} />
           </button>

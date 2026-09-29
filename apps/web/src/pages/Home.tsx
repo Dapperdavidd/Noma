@@ -142,7 +142,7 @@ export function Home() {
               [
                 "Lagos",
                 "By the water. At the heart of it all.",
-                "photo-1618828665011-0abd973f7bb8",
+                "photo-1613490493576-7fde63acd811",
               ],
               [
                 "Abuja",

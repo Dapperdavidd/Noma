@@ -27,6 +27,7 @@ export type Property = {
   address?: string;
   images?: { url: string }[];
   amenities?: string[];
+  amenity_ids?: string[];
   agent?: {
     first_name: string;
     last_name: string;

@@ -100,12 +100,43 @@ pub async fn saved_properties(
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, ApiError> {
     let user = auth::current(&req, &pool).await?;
-    let data:Vec<Value>=sqlx::query_scalar(&format!("{} JOIN favorites f ON f.property_id=p.id WHERE f.user_id=$1 AND p.status='active' ORDER BY f.created_at DESC LIMIT 100",crate::properties::CARD)).bind(user.id).fetch_all(pool.get_ref()).await?;
+    let data:Vec<Value>=sqlx::query_scalar(&format!("{} JOIN favorites f ON f.property_id=p.id WHERE f.user_id=$1 AND p.status='active' ORDER BY f.created_at DESC LIMIT 100",crate::properties::repository::CARD)).bind(user.id).fetch_all(pool.get_ref()).await?;
     Ok(HttpResponse::Ok().json(data))
 }
 
+pub async fn amenities(pool: web::Data<PgPool>) -> Result<HttpResponse, ApiError> {
+    let data: Vec<Value> = sqlx::query_scalar("SELECT to_jsonb(a) FROM amenities a ORDER BY name")
+        .fetch_all(pool.get_ref())
+        .await?;
+    Ok(HttpResponse::Ok().json(data))
+}
+#[derive(Deserialize)]
+pub struct LeadStatus {
+    status: String,
+}
+pub async fn lead_status(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+    body: web::Json<LeadStatus>,
+) -> Result<HttpResponse, ApiError> {
+    let user = auth::current(&req, &pool).await?;
+    if !["new", "contacted", "closed"].contains(&body.status.as_str()) {
+        return Err(bad("Invalid inquiry status"));
+    }
+    let result=sqlx::query("UPDATE inquiries i SET status=$1 FROM properties p WHERE i.property_id=p.id AND i.id=$2 AND p.agent_id=$3").bind(&body.status).bind(*id).bind(user.id).execute(pool.get_ref()).await?;
+    if result.rows_affected() == 0 {
+        return Err(ApiError(
+            actix_web::http::StatusCode::NOT_FOUND,
+            "Inquiry not found",
+        ));
+    }
+    Ok(HttpResponse::NoContent().finish())
+}
 pub fn routes(cfg: &mut web::ServiceConfig) {
     cfg.route("/locations", web::get().to(locations))
+        .route("/amenities", web::get().to(amenities))
+        .route("/dashboard/inquiries/{id}", web::patch().to(lead_status))
         .route("/favorites", web::get().to(favorites))
         .route("/favorites/properties", web::get().to(saved_properties))
         .route("/favorites/{id}", web::put().to(favorite))

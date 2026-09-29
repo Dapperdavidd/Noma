@@ -1719,3 +1719,57 @@ textarea {
     scroll-behavior: auto !important;
   }
 }
+form .upload-zone {
+  border: 1px dashed #9da788;
+  background: #ecefe3;
+  padding: 24px;
+  text-align: center;
+  border-radius: 10px;
+  color: #495738;
+  align-items: center;
+  gap: 12px;
+}
+form .upload-zone input {
+  background: transparent;
+  border: 0;
+  width: auto;
+  max-width: 100%;
+}
+form .upload-zone span {
+  font-size: 10px;
+  color: #879175;
+}
+.dashboard-links {
+  display: flex;
+  gap: 25px;
+  margin-top: 20px;
+}
+.admin-agents-title {
+  margin-top: 45px;
+}
+.leads article > select {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--cream);
+  color: var(--olive);
+}
+form .amenity-picker {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+form .amenity-picker label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+form .amenity-picker input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--olive);
+}

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowUpRight, Plus, Building2, MessageCircle } from "lucide-react";
 import { api, money, type Property } from "../api";
 import { hero } from "../demo";
+import { useAuth } from "../auth";
 import { Notice } from "../components";
 
 type Lead = {
@@ -14,6 +15,7 @@ type Lead = {
   status: string;
 };
 export function Dashboard() {
+  const { user } = useAuth();
   const [items, setItems] = useState<Property[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [error, setError] = useState("");
@@ -54,6 +56,16 @@ export function Dashboard() {
         <Link className="button olive" to="/dashboard/new">
           <Plus size={18} /> New property
         </Link>
+      </div>
+      <div className="dashboard-links">
+        <Link className="text-link" to="/dashboard/profile">
+          Edit agent profile <ArrowUpRight size={15} />
+        </Link>
+        {user?.role === "admin" && (
+          <Link className="text-link" to="/admin">
+            Review and verification <ArrowUpRight size={15} />
+          </Link>
+        )}
       </div>
       <div className="metrics">
         <div>
@@ -138,7 +150,25 @@ export function Dashboard() {
         <div className="leads">
           {leads.map((l) => (
             <article key={l.id}>
-              <span className="status-pill">{l.status}</span>
+              <select
+                aria-label={`Inquiry status for ${l.name}`}
+                value={l.status}
+                onChange={async (e) => {
+                  try {
+                    await api(`/dashboard/inquiries/${l.id}`, {
+                      method: "PATCH",
+                      body: JSON.stringify({ status: e.target.value }),
+                    });
+                    await load();
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
+                }}
+              >
+                {["new", "contacted", "closed"].map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
+              </select>
               <h3>{l.name}</h3>
               <p className="muted">{l.property}</p>
               <p>{l.message}</p>

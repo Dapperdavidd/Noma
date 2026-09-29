@@ -4,6 +4,8 @@ import { ArrowRight } from "lucide-react";
 import { api, type User } from "./api";
 import { Auth, Protected } from "./auth";
 import { Header, Footer } from "./components";
+import { AgentProfile } from "./pages/AgentProfile";
+import { Admin } from "./pages/Admin";
 import { Home } from "./pages/Home";
 import { Browse } from "./pages/Browse";
 import { Authentication } from "./pages/Authentication";
@@ -59,6 +61,34 @@ export default function App() {
               <Protected agent>
                 <main className="section">
                   <Dashboard />
+                </main>
+              </Protected>
+              <Footer />
+            </>
+          }
+        />
+        <Route
+          path="/dashboard/profile"
+          element={
+            <>
+              <Header />
+              <Protected agent>
+                <main className="section">
+                  <AgentProfile />
+                </main>
+              </Protected>
+              <Footer />
+            </>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <>
+              <Header />
+              <Protected agent>
+                <main className="section">
+                  <Admin />
                 </main>
               </Protected>
               <Footer />

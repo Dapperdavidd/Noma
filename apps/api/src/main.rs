@@ -1,7 +1,11 @@
+mod admin;
+mod agents;
 mod auth;
 mod community;
 mod error;
+mod images;
 mod properties;
+mod security;
 use actix_web::{
     App, HttpResponse, HttpServer,
     dev::Service,
@@ -29,8 +33,10 @@ async fn main() -> std::io::Result<()> {
     let origin = std::env::var("WEB_ORIGIN").unwrap_or_else(|_| "http://localhost:5173".into());
     let bind = std::env::var("API_BIND").unwrap_or_else(|_| "127.0.0.1:8080".into());
     tracing::info!(%bind,"NOMA API starting");
+    let limiter = web::Data::new(security::RateLimiter::default());
     HttpServer::new(move || {
         let allowed = origin.clone();
+        let limits = limiter.clone();
         App::new()
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::JsonConfig::default().limit(64 * 1024))
@@ -60,11 +66,32 @@ async fn main() -> std::io::Result<()> {
                         .get("origin")
                         .and_then(|v| v.to_str().ok())
                         .is_some_and(|v| v == allowed);
-                let future = if valid { Some(srv.call(req)) } else { None };
+                let throttled = !safe
+                    && req.peer_addr().is_some_and(|peer| {
+                        !limits.allow(
+                            peer.ip(),
+                            req.path().starts_with("/api/v1/auth/login")
+                                || req.path().starts_with("/api/v1/auth/register"),
+                        )
+                    });
+                let future = if valid && !throttled {
+                    Some(srv.call(req))
+                } else {
+                    None
+                };
                 async move {
                     match future {
                         Some(f) => f.await,
-                        None => Err(actix_web::error::ErrorForbidden("Invalid request origin")),
+                        None if throttled => Err(crate::error::ApiError(
+                            actix_web::http::StatusCode::TOO_MANY_REQUESTS,
+                            "Too many requests. Please try again later.",
+                        )
+                        .into()),
+                        None => Err(crate::error::ApiError(
+                            actix_web::http::StatusCode::FORBIDDEN,
+                            "Invalid request origin",
+                        )
+                        .into()),
                     }
                 }
             })
@@ -77,7 +104,10 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/api/v1")
                     .configure(auth::routes)
                     .configure(properties::routes)
-                    .configure(community::routes),
+                    .configure(community::routes)
+                    .configure(images::routes)
+                    .configure(agents::routes)
+                    .configure(admin::routes),
             )
     })
     .bind(bind)?
