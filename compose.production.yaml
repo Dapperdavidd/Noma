@@ -1,0 +1,29 @@
+services:
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      API_BIND: 0.0.0.0:8080
+      WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN}
+      COOKIE_SECURE: "true"
+      RUST_LOG: ${RUST_LOG:-info}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      CLOUDINARY_UPLOAD_PRESET: ${CLOUDINARY_UPLOAD_PRESET:-}
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      target: web
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${PORT:-8080}:8080"
+    restart: unless-stopped

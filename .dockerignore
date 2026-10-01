@@ -1,0 +1,13 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+node_modules
+target
+apps/web/dist
+apps/web/*.tsbuildinfo
+playwright-report
+test-results
+*.log
+.DS_Store

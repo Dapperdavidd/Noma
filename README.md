@@ -47,6 +47,12 @@ Account registration and sign-in; property seeker and agent roles; server-side o
 
 Connect Cloudinary credentials and a signed upload preset, a production database and hosting, transactional email for verification/recovery, and a reviewed location catalog. Configure HTTPS and `COOKIE_SECURE=true`. Add production monitoring, backups/restore verification, an edge abuse-control policy, legal documents and operational verification procedures. No payment or automated verification claims are made.
 
+## Production container
+
+`Dockerfile` contains separate `api` and `web` targets. The web image serves the compiled React application through unprivileged Nginx, routes `/api` to the Rust service, and falls back to `index.html` for browser routes. The API image runs as an unprivileged user and reports database-aware health through `/ready`.
+
+For a single-host deployment, set `DATABASE_URL`, `WEB_ORIGIN` (the exact public HTTPS origin), and the Cloudinary variables in a private environment file, then run `docker compose -f compose.production.yaml up --build -d`. The production compose file intentionally does not create a database; use a backed-up managed PostgreSQL service or a separately operated database. No provider account is required to build or run the images locally.
+
 ## Image uploads
 
 Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, and `CLOUDINARY_UPLOAD_PRESET` in the API environment. Create a **signed** preset restricting formats to JPEG/PNG/WebP/AVIF and maximum file size to 10 MB. Secrets never belong in `VITE_*` variables. The API signs a unique per-agent public ID, disables overwrites, and the browser uploads directly to Cloudinary. Without credentials, image links remain usable and uploads return an explicit unavailable response. Upload signatures follow [Cloudinary's official signing specification](https://cloudinary.com/documentation/authentication_signatures). The connected development account has passed a live upload, confirmation and deletion cycle.

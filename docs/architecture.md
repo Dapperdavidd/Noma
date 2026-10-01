@@ -26,6 +26,8 @@ Cookie-authenticated mutations require an exact configured Origin. CORS only per
 
 Serve frontend and API behind one HTTPS origin in production. `/health` reports process liveness and `/ready` verifies database access for load-balancer admission. Every response carries a generated `X-Request-Id`, and completion logs include that ID, route, status and elapsed time. Set proxy timeouts, body limits and abuse controls. Use a restricted database runtime role, audited migration deployment, connection budget, backups and alerts. The development database credentials are not production credentials.
 
+The production image split keeps the public Nginx process and private API process separate while preserving a single browser origin. Nginx serves immutable frontend assets, handles SPA route fallback and proxies only `/api`, `/health` and `/ready`. Both containers run without root privileges at runtime. Deployment configuration supplies secrets at runtime; they are excluded from the build context and images.
+
 ## Operational gaps
 
 This is the initial product foundation. Signed Cloudinary uploads are implemented and live-provider verified. Email verification and password recovery are deferred with Google authentication. The initial audited moderation queue is implemented. Agent properties, inquiries and saved homes use stable cursor pagination, with separate aggregate counts for the agent dashboard. Expired sessions are removed hourly in bounded batches. Every state and the FCT have a primary market; detailed city and area coverage remains curated. External log retention, metrics and alert routing require production-provider configuration. Property view analytics are intentionally deferred until privacy and retention requirements are defined.
