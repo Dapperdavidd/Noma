@@ -58,6 +58,22 @@ test("ownership, publishing, search, favorites, inquiries and session revocation
   const other = await account();
   const seeker = await account("user");
   const anonymous = await request.newContext();
+  const profile = await owner.client.put(`${baseURL}/account/profile`, {
+    data: {
+      first_name: "Ada",
+      last_name: "Okafor",
+      phone: "+234 801 234 5678",
+    },
+  });
+  expect(profile.status(), await profile.text()).toBe(200);
+  expect((await profile.json()).phone).toBe("+234 801 234 5678");
+  expect(
+    (
+      await owner.client.put(`${baseURL}/account/profile`, {
+        data: { first_name: "Ada", last_name: "Okafor", phone: "invalid" },
+      })
+    ).status(),
+  ).toBe(400);
   const tag = `Noma-${crypto.randomUUID()}`;
   const property = await create(owner.client, tag);
   expect(
@@ -180,10 +196,64 @@ test("ownership, publishing, search, favorites, inquiries and session revocation
       })
     ).status(),
   ).toBe(403);
+  expect(
+    (
+      await owner.client.put(`${baseURL}/account/password`, {
+        data: {
+          current_password: "Not-the-current-password!",
+          new_password: "Replacement-passphrase!",
+        },
+      })
+    ).status(),
+  ).toBe(401);
+  expect(
+    (
+      await owner.client.put(`${baseURL}/account/password`, {
+        data: {
+          current_password: "Integration-test-passphrase!",
+          new_password: "Replacement-passphrase!",
+        },
+      })
+    ).status(),
+  ).toBe(204);
+  expect((await owner.client.get(`${baseURL}/auth/me`)).status()).toBe(401);
+  expect(
+    (
+      await owner.client.post(`${baseURL}/auth/login`, {
+        data: {
+          email: owner.email,
+          password: "Integration-test-passphrase!",
+        },
+      })
+    ).status(),
+  ).toBe(401);
+  expect(
+    (
+      await owner.client.post(`${baseURL}/auth/login`, {
+        data: {
+          email: owner.email,
+          password: "Replacement-passphrase!",
+        },
+      })
+    ).status(),
+  ).toBe(200);
   expect((await owner.client.post(`${baseURL}/auth/logout`)).status()).toBe(
     204,
   );
   expect((await owner.client.get(`${baseURL}/auth/me`)).status()).toBe(401);
+  expect(
+    Number(
+      execFileSync(
+        "psql",
+        [
+          database,
+          "-tAc",
+          `SELECT count(*) FROM sessions WHERE user_id='${owner.user.id}'`,
+        ],
+        { encoding: "utf8" },
+      ).trim(),
+    ),
+  ).toBe(0);
   await Promise.all([
     owner.client.dispose(),
     other.client.dispose(),
@@ -414,6 +484,13 @@ test("agent can register, create a draft and publish through the browser", async
     .click();
   await expect(
     page.getByRole("heading", { name: "A browser-tested home in Lekki" }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Hi, Browser" }).click();
+  await expect(page).toHaveURL("/account");
+  await page.getByLabel("Phone number").fill("+234 802 345 6789");
+  await page.getByRole("button", { name: "Save details" }).click();
+  await expect(
+    page.getByText("Your account details have been updated."),
   ).toBeVisible();
 });
 

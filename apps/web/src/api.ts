@@ -3,6 +3,7 @@ export type User = {
   email: string;
   first_name: string;
   last_name: string;
+  phone: string | null;
   role: "user" | "agent" | "admin";
 };
 export type Property = {

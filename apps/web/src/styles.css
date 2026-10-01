@@ -1787,6 +1787,25 @@ form .upload-zone span {
 .admin-agents-title {
   margin-top: 45px;
 }
+.account-heading {
+  margin-top: 12px;
+}
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.account-grid > section {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 30px;
+}
+.account-grid h2 {
+  margin: 16px 0 8px;
+}
+.account-grid form {
+  margin-top: 24px;
+}
 .report-property {
   margin-top: 20px;
   border-top: 1px solid var(--line);
@@ -1995,5 +2014,11 @@ form .amenity-picker input {
   }
   .listing-image-previews {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .account-grid {
+    grid-template-columns: 1fr;
+  }
+  .account-grid > section {
+    padding: 22px;
   }
 }

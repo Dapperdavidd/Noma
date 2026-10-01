@@ -5,6 +5,7 @@ import { api, type User } from "./api";
 import { Auth, Protected } from "./auth";
 import { Header, Footer } from "./components";
 import { AgentProfile } from "./pages/AgentProfile";
+import { Account } from "./pages/Account";
 import { Admin } from "./pages/Admin";
 import { Home } from "./pages/Home";
 import { Browse } from "./pages/Browse";
@@ -39,6 +40,20 @@ export default function App() {
         <Route path="/login" element={<Authentication key="login" />} />
         <Route path="/join" element={<Authentication key="join" />} />
         <Route path="/discover" element={<Discover />} />
+        <Route
+          path="/account"
+          element={
+            <>
+              <Header />
+              <Protected>
+                <main className="section">
+                  <Account />
+                </main>
+              </Protected>
+              <Footer />
+            </>
+          }
+        />
         <Route
           path="/saved"
           element={

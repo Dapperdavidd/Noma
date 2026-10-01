@@ -62,7 +62,7 @@ export function Header({ overlay = false }: { overlay?: boolean }) {
         </Link>
         {user ? (
           <>
-            <Link to="/dashboard" className="sign-in">
+            <Link to="/account" className="sign-in">
               Hi, {user.first_name}
             </Link>
             <button

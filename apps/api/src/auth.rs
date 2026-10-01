@@ -21,6 +21,7 @@ pub struct User {
     pub email: String,
     pub first_name: String,
     pub last_name: String,
+    pub phone: Option<String>,
     pub role: String,
 }
 #[derive(Deserialize)]
@@ -33,6 +34,31 @@ pub struct Credentials {
 }
 fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
+}
+
+async fn password_hash(password: String) -> Result<String, ApiError> {
+    web::block(move || {
+        Argon2::default()
+            .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
+            .map(|hash| hash.to_string())
+    })
+    .await
+    .map_err(|_| bad("Unable to secure password"))?
+    .map_err(|_| bad("Unable to secure password"))
+}
+
+async fn password_valid(hash: String, password: String) -> Result<bool, ApiError> {
+    web::block(move || {
+        PasswordHash::new(&hash)
+            .map(|parsed| {
+                Argon2::default()
+                    .verify_password(password.as_bytes(), &parsed)
+                    .is_ok()
+            })
+            .unwrap_or(false)
+    })
+    .await
+    .map_err(|_| unauthorized())
 }
 
 async fn cleanup_expired_sessions(pool: &PgPool) -> Result<u64, sqlx::Error> {
@@ -70,7 +96,7 @@ pub fn spawn_session_cleanup(pool: PgPool) {
 
 pub async fn current(req: &HttpRequest, pool: &PgPool) -> Result<User, ApiError> {
     let token = req.cookie("noma_session").ok_or_else(unauthorized)?;
-    let user=sqlx::query_as::<_,User>("SELECT u.id,u.email,u.first_name,u.last_name,u.role FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=$1 AND s.expires_at>now() AND u.is_active").bind(hash_token(token.value())).fetch_optional(pool).await?.ok_or_else(unauthorized)?;
+    let user=sqlx::query_as::<_,User>("SELECT u.id,u.email,u.first_name,u.last_name,u.phone,u.role FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=$1 AND s.expires_at>now() AND u.is_active").bind(hash_token(token.value())).fetch_optional(pool).await?.ok_or_else(unauthorized)?;
     Ok(user)
 }
 
@@ -120,18 +146,10 @@ pub async fn register(
     if !["user", "agent"].contains(&role) {
         return Err(bad("Invalid account role"));
     }
-    let password = body.password.clone();
-    let hash = web::block(move || {
-        Argon2::default()
-            .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
-            .map(|h| h.to_string())
-    })
-    .await
-    .map_err(|_| bad("Unable to register"))?
-    .map_err(|_| bad("Unable to register"))?;
+    let hash = password_hash(body.password.clone()).await?;
     let mut tx = pool.begin().await?;
     let id = Uuid::new_v4();
-    let user=sqlx::query_as::<_,User>("INSERT INTO users(id,email,password_hash,first_name,last_name,role) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,email,first_name,last_name,role").bind(id).bind(email).bind(hash).bind(first).bind(last).bind(role).fetch_one(&mut *tx).await?;
+    let user=sqlx::query_as::<_,User>("INSERT INTO users(id,email,password_hash,first_name,last_name,role) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,email,first_name,last_name,phone,role").bind(id).bind(email).bind(hash).bind(first).bind(last).bind(role).fetch_one(&mut *tx).await?;
     if role == "agent" {
         sqlx::query("INSERT INTO agent_profiles(id,user_id) VALUES($1,$2)")
             .bind(Uuid::new_v4())
@@ -156,23 +174,12 @@ pub async fn login(
     .fetch_optional(pool.get_ref())
     .await?
     .ok_or_else(unauthorized)?;
-    let password = body.password.clone();
-    let valid = web::block(move || {
-        PasswordHash::new(&row.1)
-            .map(|h| {
-                Argon2::default()
-                    .verify_password(password.as_bytes(), &h)
-                    .is_ok()
-            })
-            .unwrap_or(false)
-    })
-    .await
-    .map_err(|_| unauthorized())?;
+    let valid = password_valid(row.1, body.password.clone()).await?;
     if !valid {
         return Err(unauthorized());
     }
     let user = sqlx::query_as::<_, User>(
-        "SELECT id,email,first_name,last_name,role FROM users WHERE id=$1",
+        "SELECT id,email,first_name,last_name,phone,role FROM users WHERE id=$1",
     )
     .bind(row.0)
     .fetch_one(pool.get_ref())
@@ -181,6 +188,102 @@ pub async fn login(
 }
 pub async fn me(req: HttpRequest, pool: web::Data<PgPool>) -> Result<HttpResponse, ApiError> {
     Ok(HttpResponse::Ok().json(current(&req, &pool).await?))
+}
+
+#[derive(Deserialize)]
+pub struct AccountProfile {
+    first_name: String,
+    last_name: String,
+    phone: Option<String>,
+}
+
+pub async fn update_profile(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    body: web::Json<AccountProfile>,
+) -> Result<HttpResponse, ApiError> {
+    let user = current(&req, &pool).await?;
+    let first = body.first_name.trim();
+    let last = body.last_name.trim();
+    if first.is_empty() || last.is_empty() || first.len() > 100 || last.len() > 100 {
+        return Err(bad(
+            "First and last names are required (maximum 100 characters)",
+        ));
+    }
+    let phone = body
+        .phone
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(value) = phone {
+        let digits = value
+            .chars()
+            .filter(|character| character.is_ascii_digit())
+            .count();
+        if !(7..=15).contains(&digits)
+            || value.len() > 30
+            || !value
+                .chars()
+                .all(|character| character.is_ascii_digit() || "+ -()".contains(character))
+        {
+            return Err(bad("Use a valid phone number"));
+        }
+    }
+    let updated = sqlx::query_as::<_, User>(
+        "UPDATE users SET first_name=$1,last_name=$2,phone=$3,updated_at=now() WHERE id=$4 RETURNING id,email,first_name,last_name,phone,role",
+    )
+    .bind(first)
+    .bind(last)
+    .bind(phone)
+    .bind(user.id)
+    .fetch_one(pool.get_ref())
+    .await?;
+    Ok(HttpResponse::Ok().json(updated))
+}
+
+#[derive(Deserialize)]
+pub struct PasswordChange {
+    current_password: String,
+    new_password: String,
+}
+
+pub async fn change_password(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    body: web::Json<PasswordChange>,
+) -> Result<HttpResponse, ApiError> {
+    let user = current(&req, &pool).await?;
+    if !(12..=128).contains(&body.new_password.len()) {
+        return Err(bad("New password must contain 12–128 characters"));
+    }
+    if body.current_password == body.new_password {
+        return Err(bad("Choose a password you have not already used"));
+    }
+    let existing: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id=$1")
+        .bind(user.id)
+        .fetch_one(pool.get_ref())
+        .await?;
+    if !password_valid(existing, body.current_password.clone()).await? {
+        return Err(ApiError(
+            actix_web::http::StatusCode::UNAUTHORIZED,
+            "Current password is incorrect",
+        ));
+    }
+    let replacement = password_hash(body.new_password.clone()).await?;
+    let mut tx = pool.begin().await?;
+    sqlx::query("UPDATE users SET password_hash=$1,updated_at=now() WHERE id=$2")
+        .bind(replacement)
+        .bind(user.id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM sessions WHERE user_id=$1")
+        .bind(user.id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    let mut cookie = session_cookie(String::new());
+    cookie.make_removal();
+    Ok(HttpResponse::NoContent().cookie(cookie).finish())
 }
 pub async fn logout(req: HttpRequest, pool: web::Data<PgPool>) -> Result<HttpResponse, ApiError> {
     if let Some(cookie) = req.cookie("noma_session") {
@@ -197,5 +300,7 @@ pub fn routes(cfg: &mut web::ServiceConfig) {
     cfg.route("/auth/register", web::post().to(register))
         .route("/auth/login", web::post().to(login))
         .route("/auth/me", web::get().to(me))
-        .route("/auth/logout", web::post().to(logout));
+        .route("/auth/logout", web::post().to(logout))
+        .route("/account/profile", web::put().to(update_profile))
+        .route("/account/password", web::put().to(change_password));
 }
