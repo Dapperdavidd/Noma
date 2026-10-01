@@ -12,6 +12,8 @@ UUID identifiers are opaque. User and agent authentication are shared; agent pro
 
 Agent verification and listing verification are independent. Editing listing details clears property verification. Publishing does not confer verification. Listings become drafts, active, sold, rented, expired or suspended rather than disappearing. Only admins can suspend or unsuspend.
 
+Signed-in users can report active listings they do not own using a constrained category and written evidence. A partial unique index permits only one open report per user and property. Administrators resolve or dismiss reports with a required reason; the report stores its reviewer and resolution time, and the decision is also appended to the moderation event trail.
+
 ## Search
 
 Public queries always require active status. PostgreSQL applies location/type/bedroom/price filters and full-text search. Cards return a small projection with a single cover image. Detail pages load gallery, description, amenities and public agent information. User email and password hashes are excluded from public responses.

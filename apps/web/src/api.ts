@@ -34,6 +34,7 @@ export type Property = {
   amenities?: string[];
   amenity_ids?: string[];
   agent?: {
+    id: string;
     first_name: string;
     last_name: string;
     agency_name: string | null;

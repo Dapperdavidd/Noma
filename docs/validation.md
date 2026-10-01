@@ -16,6 +16,7 @@
   - Browser registration, draft creation, publishing and detail navigation.
   - Agent profiles, normalized location filters, price and bedroom ranges, amenities, inquiry status permissions and disconnected upload behavior.
   - Administrator review audit, independent verification and suspended-listing protection.
+  - Listing report validation, duplicate prevention, owner/admin boundaries and audited resolution.
 
 ## Query plan experiment
 

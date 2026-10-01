@@ -565,6 +565,7 @@ test("agent profiles, amenities, inquiry statuses and administrator boundaries",
 test("administrator review is audited and verification stays independent", async () => {
   const administrator = await account();
   const owner = await account();
+  const seeker = await account("user");
   if (new URL(database).pathname !== "/noma_test")
     throw new Error(
       "Administrator fixture requires the isolated noma_test database",
@@ -584,6 +585,61 @@ test("administrator review is audited and verification stays independent", async
   await owner.client.patch(`${baseURL}/properties/${property.id}/status`, {
     data: { status: "active" },
   });
+  const report = {
+    category: "inaccurate",
+    details: "The advertised bedroom count does not match the property photos.",
+  };
+  expect(
+    (
+      await seeker.client.post(`${baseURL}/properties/${property.id}/reports`, {
+        data: report,
+      })
+    ).status(),
+  ).toBe(201);
+  expect(
+    (
+      await seeker.client.post(`${baseURL}/properties/${property.id}/reports`, {
+        data: report,
+      })
+    ).status(),
+  ).toBe(409);
+  expect(
+    (
+      await owner.client.post(`${baseURL}/properties/${property.id}/reports`, {
+        data: report,
+      })
+    ).status(),
+  ).toBe(400);
+  const queue = await (
+    await administrator.client.get(`${baseURL}/admin/queue`)
+  ).json();
+  const queuedReport = queue.reports.find(
+    (item: any) => item.property_id === property.id,
+  );
+  expect(queuedReport.details).toBe(report.details);
+  expect(
+    (
+      await owner.client.patch(`${baseURL}/admin/reports/${queuedReport.id}`, {
+        data: {
+          action: "resolved",
+          reason: "Attempted unauthorized report resolution.",
+        },
+      })
+    ).status(),
+  ).toBe(403);
+  expect(
+    (
+      await administrator.client.patch(
+        `${baseURL}/admin/reports/${queuedReport.id}`,
+        {
+          data: {
+            action: "resolved",
+            reason: "Listing details were corrected after evidence review.",
+          },
+        },
+      )
+    ).status(),
+  ).toBe(204);
   expect(
     (
       await administrator.client.post(
@@ -662,9 +718,10 @@ test("administrator review is audited and verification stays independent", async
     ],
     { encoding: "utf8" },
   );
-  expect(Number(audit.trim())).toBe(3);
+  expect(Number(audit.trim())).toBe(4);
   await administrator.client.dispose();
   await owner.client.dispose();
+  await seeker.client.dispose();
 });
 
 test("malformed edit identifiers cannot create a new property", async () => {

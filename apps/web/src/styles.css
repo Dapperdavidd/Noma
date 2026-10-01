@@ -1787,6 +1787,23 @@ form .upload-zone span {
 .admin-agents-title {
   margin-top: 45px;
 }
+.report-property {
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+.report-property summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  color: #717867;
+  font-size: 12px;
+}
+.report-property form,
+.report-property .notice {
+  margin-top: 18px;
+}
 .leads article > select {
   padding: 7px 10px;
   border: 1px solid var(--line);

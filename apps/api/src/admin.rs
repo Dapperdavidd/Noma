@@ -21,7 +21,8 @@ pub async fn queue(req: HttpRequest, pool: web::Data<PgPool>) -> Result<HttpResp
     admin(&req, &pool).await?;
     let properties:Vec<Value>=sqlx::query_scalar(&format!("{} WHERE p.status IN ('active','suspended') AND NOT p.is_verified ORDER BY p.created_at LIMIT 100",crate::properties::repository::CARD)).fetch_all(pool.get_ref()).await?;
     let agents:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',a.user_id,'name',u.first_name || ' ' || u.last_name,'agency_name',a.agency_name,'verification_status',a.verification_status) FROM agent_profiles a JOIN users u ON u.id=a.user_id WHERE a.verification_status='pending' ORDER BY a.created_at LIMIT 100").fetch_all(pool.get_ref()).await?;
-    Ok(HttpResponse::Ok().json(json!({"properties":properties,"agents":agents})))
+    let reports:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',r.id,'category',r.category,'details',r.details,'created_at',r.created_at,'property_id',p.id,'property',p.title,'slug',p.slug,'reporter',u.first_name || ' ' || u.last_name,'reporter_email',u.email) FROM property_reports r JOIN properties p ON p.id=r.property_id JOIN users u ON u.id=r.reporter_id WHERE r.status='open' ORDER BY r.created_at,r.id LIMIT 100").fetch_all(pool.get_ref()).await?;
+    Ok(HttpResponse::Ok().json(json!({"properties":properties,"agents":agents,"reports":reports})))
 }
 #[derive(Deserialize)]
 pub struct Review {
@@ -53,7 +54,52 @@ pub async fn review(
     tx.commit().await?;
     Ok(HttpResponse::NoContent().finish())
 }
+
+#[derive(Deserialize)]
+pub struct ReportReview {
+    action: String,
+    reason: String,
+}
+
+pub async fn review_report(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+    body: web::Json<ReportReview>,
+) -> Result<HttpResponse, ApiError> {
+    let user = admin(&req, &pool).await?;
+    if !["resolved", "dismissed"].contains(&body.action.as_str()) {
+        return Err(bad("Invalid report decision"));
+    }
+    if !(5..=2000).contains(&body.reason.trim().len()) {
+        return Err(bad("A decision reason of 5–2,000 characters is required"));
+    }
+    let mut tx = pool.begin().await?;
+    let changed = sqlx::query(
+        "UPDATE property_reports SET status=$1,resolution_reason=$2,reviewed_by=$3,reviewed_at=now() WHERE id=$4 AND status='open'",
+    )
+    .bind(&body.action)
+    .bind(body.reason.trim())
+    .bind(user.id)
+    .bind(*id)
+    .execute(&mut *tx)
+    .await?;
+    if changed.rows_affected() == 0 {
+        return Err(bad("The report is unavailable for this action"));
+    }
+    sqlx::query("INSERT INTO moderation_events(id,actor_id,target_id,target_type,action,reason) VALUES($1,$2,$3,'report',$4,$5)")
+        .bind(Uuid::new_v4())
+        .bind(user.id)
+        .bind(*id)
+        .bind(&body.action)
+        .bind(body.reason.trim())
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(HttpResponse::NoContent().finish())
+}
 pub fn routes(cfg: &mut web::ServiceConfig) {
     cfg.route("/admin/queue", web::get().to(queue))
-        .route("/admin/reviews/{id}", web::post().to(review));
+        .route("/admin/reviews/{id}", web::post().to(review))
+        .route("/admin/reports/{id}", web::patch().to(review_report));
 }

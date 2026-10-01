@@ -10,6 +10,7 @@ import {
   Maximize,
   ShieldCheck,
   MessageCircle,
+  AlertTriangle,
   Check,
 } from "lucide-react";
 import { api, money, type Property } from "../api";
@@ -24,6 +25,8 @@ export function Detail() {
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
+  const [reported, setReported] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const [selected, setSelected] = useState(0);
   const { user } = useAuth();
   const favorites = useFavorites();
@@ -47,6 +50,22 @@ export function Detail() {
       setError((e as Error).message);
     } finally {
       setSending(false);
+    }
+  }
+  async function report(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setReporting(true);
+    try {
+      await api(`/properties/${p!.id}/reports`, {
+        method: "POST",
+        body: JSON.stringify(Object.fromEntries(new FormData(e.currentTarget))),
+      });
+      setReported(true);
+      setError("");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setReporting(false);
     }
   }
   return (
@@ -198,6 +217,53 @@ export function Detail() {
                   Visit the property and verify ownership before making a
                   payment.
                 </p>
+                {user && user.id !== p.agent?.id && (
+                  <details className="report-property">
+                    <summary>
+                      <AlertTriangle size={14} /> Report this listing
+                    </summary>
+                    {reported ? (
+                      <Notice>
+                        Report received. An administrator will review it.
+                      </Notice>
+                    ) : (
+                      <form onSubmit={report}>
+                        <label>
+                          What seems wrong?
+                          <select name="category" defaultValue="inaccurate">
+                            <option value="suspected_scam">
+                              Suspected scam
+                            </option>
+                            <option value="duplicate">Duplicate listing</option>
+                            <option value="inaccurate">
+                              Inaccurate information
+                            </option>
+                            <option value="unavailable">
+                              Property is unavailable
+                            </option>
+                            <option value="other">Something else</option>
+                          </select>
+                        </label>
+                        <label>
+                          Details
+                          <textarea
+                            name="details"
+                            required
+                            minLength={10}
+                            maxLength={2000}
+                            placeholder="Tell the review team what you noticed."
+                          />
+                        </label>
+                        <button
+                          className="button outline full"
+                          disabled={reporting}
+                        >
+                          {reporting ? "Sending…" : "Send report"}
+                        </button>
+                      </form>
+                    )}
+                  </details>
+                )}
               </aside>
             </div>
           </>

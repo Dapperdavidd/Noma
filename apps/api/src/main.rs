@@ -7,6 +7,7 @@ mod images;
 mod observability;
 mod pagination;
 mod properties;
+mod reports;
 mod security;
 use actix_web::{
     App, HttpServer,
@@ -138,6 +139,7 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/api/v1")
                     .configure(auth::routes)
                     .configure(properties::routes)
+                    .configure(reports::routes)
                     .configure(community::routes)
                     .configure(images::routes)
                     .configure(agents::routes)
