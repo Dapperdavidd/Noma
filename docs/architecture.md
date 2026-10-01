@@ -14,6 +14,8 @@ Agent verification and listing verification are independent. Editing listing det
 
 Signed-in users can report active listings they do not own using a constrained category and written evidence. A partial unique index permits only one open report per user and property. Administrators resolve or dismiss reports with a required reason; the report stores its reviewer and resolution time, and the decision is also appended to the moderation event trail.
 
+The three moderation queues page independently using stable `(created_at, id)` cursors. Old reports, listings or agent applications therefore remain reachable even when another queue is busy.
+
 ## Search
 
 Public queries always require active status. PostgreSQL applies location/type/bedroom/price filters and full-text search. Cards return a small projection with a single cover image. Detail pages load gallery, description, amenities and public agent information. User email and password hashes are excluded from public responses.

@@ -518,7 +518,9 @@ test("agent profiles, amenities, inquiry statuses and administrator boundaries",
       })
     ).status(),
   ).toBe(403);
-  expect((await owner.client.get(`${baseURL}/admin/queue`)).status()).toBe(403);
+  expect(
+    (await owner.client.get(`${baseURL}/admin/queue/properties`)).status(),
+  ).toBe(403);
   expect(
     (await owner.client.post(`${baseURL}/images/signature`)).status(),
   ).toBe(503);
@@ -688,12 +690,19 @@ test("administrator review is audited and verification stays independent", async
     ).status(),
   ).toBe(400);
   const queue = await (
-    await administrator.client.get(`${baseURL}/admin/queue`)
+    await administrator.client.get(`${baseURL}/admin/queue/reports`)
   ).json();
-  const queuedReport = queue.reports.find(
+  const queuedReport = queue.data.find(
     (item: any) => item.property_id === property.id,
   );
   expect(queuedReport.details).toBe(report.details);
+  expect(
+    (
+      await administrator.client.get(
+        `${baseURL}/admin/queue/reports?cursor=broken`,
+      )
+    ).status(),
+  ).toBe(400);
   expect(
     (
       await owner.client.patch(`${baseURL}/admin/reports/${queuedReport.id}`, {
@@ -717,6 +726,13 @@ test("administrator review is audited and verification stays independent", async
       )
     ).status(),
   ).toBe(204);
+  expect(
+    (
+      await (
+        await administrator.client.get(`${baseURL}/admin/queue/reports`)
+      ).json()
+    ).data.map((item: any) => item.id),
+  ).not.toContain(queuedReport.id);
   expect(
     (
       await administrator.client.post(

@@ -1,11 +1,12 @@
 use crate::{
     auth,
     error::{ApiError, bad},
+    pagination::{Page, cursor},
 };
 use actix_web::{HttpRequest, HttpResponse, http::StatusCode, web};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 async fn admin(req: &HttpRequest, pool: &PgPool) -> Result<auth::User, ApiError> {
     let user = auth::current(req, pool).await?;
@@ -17,12 +18,82 @@ async fn admin(req: &HttpRequest, pool: &PgPool) -> Result<auth::User, ApiError>
     }
     Ok(user)
 }
-pub async fn queue(req: HttpRequest, pool: web::Data<PgPool>) -> Result<HttpResponse, ApiError> {
+fn paged(mut data: Vec<Value>, limit: i64) -> Value {
+    let more = data.len() > limit as usize;
+    data.truncate(limit as usize);
+    let next_cursor = if more {
+        data.last()
+            .and_then(|item| Some(cursor(item["created_at"].as_str()?, item["id"].as_str()?)))
+    } else {
+        None
+    };
+    json!({"data":data,"next_cursor":next_cursor})
+}
+
+pub async fn queue(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    kind: web::Path<String>,
+    page: web::Query<Page>,
+) -> Result<HttpResponse, ApiError> {
     admin(&req, &pool).await?;
-    let properties:Vec<Value>=sqlx::query_scalar(&format!("{} WHERE p.status IN ('active','suspended') AND NOT p.is_verified ORDER BY p.created_at LIMIT 100",crate::properties::repository::CARD)).fetch_all(pool.get_ref()).await?;
-    let agents:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',a.user_id,'name',u.first_name || ' ' || u.last_name,'agency_name',a.agency_name,'verification_status',a.verification_status) FROM agent_profiles a JOIN users u ON u.id=a.user_id WHERE a.verification_status='pending' ORDER BY a.created_at LIMIT 100").fetch_all(pool.get_ref()).await?;
-    let reports:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',r.id,'category',r.category,'details',r.details,'created_at',r.created_at,'property_id',p.id,'property',p.title,'slug',p.slug,'reporter',u.first_name || ' ' || u.last_name,'reporter_email',u.email) FROM property_reports r JOIN properties p ON p.id=r.property_id JOIN users u ON u.id=r.reporter_id WHERE r.status='open' ORDER BY r.created_at,r.id LIMIT 100").fetch_all(pool.get_ref()).await?;
-    Ok(HttpResponse::Ok().json(json!({"properties":properties,"agents":agents,"reports":reports})))
+    let limit = page.limit();
+    let cursor_value = page.decoded_cursor()?;
+    let data: Vec<Value> = match kind.as_str() {
+        "properties" => {
+            let mut query: QueryBuilder<Postgres> =
+                QueryBuilder::new(crate::properties::repository::CARD);
+            query.push(" WHERE p.status IN ('active','suspended') AND NOT p.is_verified");
+            if let Some((created_at, id)) = cursor_value {
+                query
+                    .push(" AND (p.created_at,p.id)>(")
+                    .push_bind(created_at)
+                    .push(",")
+                    .push_bind(id)
+                    .push(")");
+            }
+            query
+                .push(" ORDER BY p.created_at,p.id LIMIT ")
+                .push_bind(limit + 1);
+            query.build_query_scalar().fetch_all(pool.get_ref()).await?
+        }
+        "agents" => {
+            let mut query: QueryBuilder<Postgres> = QueryBuilder::new(
+                "SELECT jsonb_build_object('id',a.user_id,'name',u.first_name || ' ' || u.last_name,'agency_name',a.agency_name,'verification_status',a.verification_status,'created_at',a.created_at) FROM agent_profiles a JOIN users u ON u.id=a.user_id WHERE a.verification_status='pending'",
+            );
+            if let Some((created_at, id)) = cursor_value {
+                query
+                    .push(" AND (a.created_at,a.user_id)>(")
+                    .push_bind(created_at)
+                    .push(",")
+                    .push_bind(id)
+                    .push(")");
+            }
+            query
+                .push(" ORDER BY a.created_at,a.user_id LIMIT ")
+                .push_bind(limit + 1);
+            query.build_query_scalar().fetch_all(pool.get_ref()).await?
+        }
+        "reports" => {
+            let mut query: QueryBuilder<Postgres> = QueryBuilder::new(
+                "SELECT jsonb_build_object('id',r.id,'category',r.category,'details',r.details,'created_at',r.created_at,'property_id',p.id,'property',p.title,'slug',p.slug,'reporter',u.first_name || ' ' || u.last_name,'reporter_email',u.email) FROM property_reports r JOIN properties p ON p.id=r.property_id JOIN users u ON u.id=r.reporter_id WHERE r.status='open'",
+            );
+            if let Some((created_at, id)) = cursor_value {
+                query
+                    .push(" AND (r.created_at,r.id)>(")
+                    .push_bind(created_at)
+                    .push(",")
+                    .push_bind(id)
+                    .push(")");
+            }
+            query
+                .push(" ORDER BY r.created_at,r.id LIMIT ")
+                .push_bind(limit + 1);
+            query.build_query_scalar().fetch_all(pool.get_ref()).await?
+        }
+        _ => return Err(bad("Invalid review queue")),
+    };
+    Ok(HttpResponse::Ok().json(paged(data, limit)))
 }
 #[derive(Deserialize)]
 pub struct Review {
@@ -99,7 +170,7 @@ pub async fn review_report(
     Ok(HttpResponse::NoContent().finish())
 }
 pub fn routes(cfg: &mut web::ServiceConfig) {
-    cfg.route("/admin/queue", web::get().to(queue))
+    cfg.route("/admin/queue/{kind}", web::get().to(queue))
         .route("/admin/reviews/{id}", web::post().to(review))
         .route("/admin/reports/{id}", web::patch().to(review_report));
 }

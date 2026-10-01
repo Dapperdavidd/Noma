@@ -13,25 +13,71 @@ type Report = {
   reporter: string;
   reporter_email: string;
 };
+type Page<T> = { data: T[]; next_cursor: string | null };
 export function Admin() {
   const { user } = useAuth();
   const [properties, setProperties] = useState<Property[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
+  const [cursors, setCursors] = useState({
+    properties: null as string | null,
+    agents: null as string | null,
+    reports: null as string | null,
+  });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   async function load() {
     try {
-      const value = await api<{
-        properties: Property[];
-        agents: Agent[];
-        reports: Report[];
-      }>("/admin/queue");
-      setProperties(value.properties);
-      setAgents(value.agents);
-      setReports(value.reports);
+      const [propertyPage, agentPage, reportPage] = await Promise.all([
+        api<Page<Property>>("/admin/queue/properties"),
+        api<Page<Agent>>("/admin/queue/agents"),
+        api<Page<Report>>("/admin/queue/reports"),
+      ]);
+      setProperties(propertyPage.data);
+      setAgents(agentPage.data);
+      setReports(reportPage.data);
+      setCursors({
+        properties: propertyPage.next_cursor,
+        agents: agentPage.next_cursor,
+        reports: reportPage.next_cursor,
+      });
     } catch (e) {
       setError((e as Error).message);
+    }
+  }
+  async function showMore(kind: "properties" | "agents" | "reports") {
+    const cursor = cursors[kind];
+    if (!cursor || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const path = `/admin/queue/${kind}?cursor=${encodeURIComponent(cursor)}`;
+      if (kind === "properties") {
+        const page = await api<Page<Property>>(path);
+        setProperties((current) => [...current, ...page.data]);
+        setCursors((current) => ({
+          ...current,
+          properties: page.next_cursor,
+        }));
+      } else if (kind === "agents") {
+        const page = await api<Page<Agent>>(path);
+        setAgents((current) => [...current, ...page.data]);
+        setCursors((current) => ({
+          ...current,
+          agents: page.next_cursor,
+        }));
+      } else {
+        const page = await api<Page<Report>>(path);
+        setReports((current) => [...current, ...page.data]);
+        setCursors((current) => ({
+          ...current,
+          reports: page.next_cursor,
+        }));
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
   async function resolveReport(e: FormEvent<HTMLFormElement>, id: string) {
@@ -125,6 +171,15 @@ export function Admin() {
           </article>
         ))}
       </div>
+      {cursors.reports && (
+        <button
+          className="button ghost load-more"
+          onClick={() => void showMore("reports")}
+          disabled={busy}
+        >
+          Show more reports
+        </button>
+      )}
       {!reports.length && <p className="muted">No open listing reports.</p>}
       <h2>Properties</h2>
       <div className="leads">
@@ -166,6 +221,15 @@ export function Admin() {
           </article>
         ))}
       </div>
+      {cursors.properties && (
+        <button
+          className="button ghost load-more"
+          onClick={() => void showMore("properties")}
+          disabled={busy}
+        >
+          Show more properties
+        </button>
+      )}
       {!properties.length && (
         <p className="muted">No properties awaiting review.</p>
       )}
@@ -199,6 +263,15 @@ export function Admin() {
           </article>
         ))}
       </div>
+      {cursors.agents && (
+        <button
+          className="button ghost load-more"
+          onClick={() => void showMore("agents")}
+          disabled={busy}
+        >
+          Show more agents
+        </button>
+      )}
       {!agents.length && <p className="muted">No agents awaiting review.</p>}
     </>
   );
