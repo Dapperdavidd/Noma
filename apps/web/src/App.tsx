@@ -81,7 +81,7 @@ export default function App() {
           element={
             <>
               <Header />
-              <Protected agent>
+              <Protected>
                 <main className="section">
                   <Dashboard />
                 </main>
@@ -123,7 +123,7 @@ export default function App() {
           element={
             <>
               <Header />
-              <Protected agent>
+              <Protected>
                 <main className="section">
                   <ListingForm />
                 </main>
@@ -137,7 +137,7 @@ export default function App() {
           element={
             <>
               <Header />
-              <Protected agent>
+              <Protected>
                 <main className="section">
                   <ListingForm />
                 </main>

@@ -4,6 +4,9 @@ export type User = {
   first_name: string;
   last_name: string;
   phone: string | null;
+  whatsapp: string | null;
+  telegram: string | null;
+  instagram: string | null;
   role: "user" | "agent" | "admin";
   is_verified: boolean;
   has_password: boolean;
@@ -23,6 +26,8 @@ export type Property = {
   state: string;
   area: string | null;
   cover_image: string | null;
+  is_featured?: boolean;
+  has_video?: boolean;
   is_verified: boolean;
   status: string;
   created_at: string;
@@ -34,6 +39,13 @@ export type Property = {
     public_id?: string | null;
     upload_id?: string | null;
   }[];
+  videos?: {
+    id?: string;
+    url: string;
+    kind: "upload" | "youtube" | "external";
+    public_id?: string | null;
+    upload_id?: string | null;
+  }[];
   amenities?: string[];
   amenity_ids?: string[];
   agent?: {
@@ -42,6 +54,10 @@ export type Property = {
     last_name: string;
     agency_name: string | null;
     verification_status: string;
+    phone: string | null;
+    whatsapp: string | null;
+    telegram: string | null;
+    instagram: string | null;
   };
   state_id?: string;
   city_id?: string;

@@ -14,6 +14,18 @@ type Report = {
   reporter_email: string;
 };
 type Page<T> = { data: T[]; next_cursor: string | null };
+type Metrics = {
+  total_users: number;
+  active_users: number;
+  property_seekers: number;
+  new_users_today: number;
+  total_properties: number;
+  published_properties: number;
+  properties_updated_today: number;
+  photos_uploaded_today: number;
+  videos_uploaded_today: number;
+  open_reports: number;
+};
 export function Admin() {
   const { user } = useAuth();
   const [properties, setProperties] = useState<Property[]>([]);
@@ -26,16 +38,20 @@ export function Admin() {
   });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
   async function load() {
     try {
-      const [propertyPage, agentPage, reportPage] = await Promise.all([
-        api<Page<Property>>("/admin/queue/properties"),
-        api<Page<Agent>>("/admin/queue/agents"),
-        api<Page<Report>>("/admin/queue/reports"),
-      ]);
+      const [propertyPage, agentPage, reportPage, nextMetrics] =
+        await Promise.all([
+          api<Page<Property>>("/admin/queue/properties"),
+          api<Page<Agent>>("/admin/queue/agents"),
+          api<Page<Report>>("/admin/queue/reports"),
+          api<Metrics>("/admin/metrics"),
+        ]);
       setProperties(propertyPage.data);
       setAgents(agentPage.data);
       setReports(reportPage.data);
+      setMetrics(nextMetrics);
       setCursors({
         properties: propertyPage.next_cursor,
         agents: agentPage.next_cursor,
@@ -133,6 +149,27 @@ export function Admin() {
         records your account and review reason.
       </p>
       {error && <Notice>{error}</Notice>}
+      {metrics && (
+        <section className="admin-overview" aria-label="Marketplace overview">
+          {[
+            ["Total users", metrics.total_users],
+            ["Users with active sessions", metrics.active_users],
+            ["Property seekers", metrics.property_seekers],
+            ["New users today", metrics.new_users_today],
+            ["All properties", metrics.total_properties],
+            ["Published properties", metrics.published_properties],
+            ["Properties updated today", metrics.properties_updated_today],
+            ["Photos uploaded today", metrics.photos_uploaded_today],
+            ["Videos uploaded today", metrics.videos_uploaded_today],
+            ["Open reports", metrics.open_reports],
+          ].map(([label, value]) => (
+            <article key={label}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </article>
+          ))}
+        </section>
+      )}
       <h2>Listing reports</h2>
       <div className="leads">
         {reports.map((report) => (
@@ -199,7 +236,14 @@ export function Admin() {
                     <option value="restore">Restore to draft</option>
                   ) : (
                     <>
-                      <option value="verify">Verify property</option>
+                      {!p.is_verified && (
+                        <option value="verify">Verify property</option>
+                      )}
+                      <option value={p.is_featured ? "unfeature" : "feature"}>
+                        {p.is_featured
+                          ? "Remove featured placement"
+                          : "Feature for 30 days"}
+                      </option>
                       <option value="suspend">Suspend property</option>
                     </>
                   )}

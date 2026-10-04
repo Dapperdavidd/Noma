@@ -182,10 +182,15 @@ test("ownership, publishing, search, favorites, inquiries and session revocation
       first_name: "Ada",
       last_name: "Okafor",
       phone: "+234 801 234 5678",
+      whatsapp: "+234 809 876 5432",
+      telegram: "@ada_homes",
+      instagram: "ada.homes",
     },
   });
   expect(profile.status(), await profile.text()).toBe(200);
-  expect((await profile.json()).phone).toBe("+234 801 234 5678");
+  const profileBody = await profile.json();
+  expect(profileBody.phone).toBe("+234 801 234 5678");
+  expect(profileBody.whatsapp).toBe("+234 809 876 5432");
   expect(
     (
       await owner.client.put(`${baseURL}/account/profile`, {
@@ -211,10 +216,13 @@ test("ownership, publishing, search, favorites, inquiries and session revocation
   expect(
     (
       await seeker.client.post(`${baseURL}/properties`, {
-        data: listing("A seeker cannot publish"),
+        data: {
+          ...listing("A user can create a rental listing"),
+          videos: ["https://www.youtube.com/watch?v=dQw4w9WgXcQ"],
+        },
       })
     ).status(),
-  ).toBe(403);
+  ).toBe(200);
   expect(
     (
       await other.client.patch(`${baseURL}/properties/${property.id}/status`, {
@@ -395,7 +403,7 @@ test("stable keyset pagination across equal prices and dates", async () => {
       ).status(),
     ).toBe(204);
   }
-  for (const sort of ["newest", "price_asc", "price_desc"]) {
+  for (const sort of ["newest", "featured", "price_asc", "price_desc"]) {
     let cursor: string | null = null;
     const seen: string[] = [];
     for (let page = 0; page < 4; page++) {
@@ -567,10 +575,14 @@ test("homepage and mobile search remain usable", async ({ page }) => {
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
 });
-test("agent can register, create a draft and publish through the browser", async ({
+test("a signed-in user can create a rental draft and publish through the browser", async ({
   page,
 }) => {
-  await page.goto("/join?role=agent");
+  await page.goto("/dashboard/new");
+  await page.getByRole("link", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL(/\/login\?next=/);
+  await page.getByRole("link", { name: "Create an account" }).click();
+  await expect(page).toHaveURL(/\/join\?next=/);
   await page.getByLabel("First name").fill("Browser");
   await page.getByLabel("Last name").fill("Tester");
   await page
@@ -580,8 +592,7 @@ test("agent can register, create a draft and publish through the browser", async
     .getByLabel("Password", { exact: true })
     .fill("Browser-test-passphrase!");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).toHaveURL("/dashboard");
-  await page.getByRole("link", { name: "New property", exact: true }).click();
+  await expect(page).toHaveURL("/dashboard/new", { timeout: 15_000 });
   await page
     .getByLabel("Property title")
     .fill("A browser-tested home in Lekki");
@@ -604,6 +615,9 @@ test("agent can register, create a draft and publish through the browser", async
   await page
     .getByLabel("Property image URLs")
     .fill("https://images.unsplash.com/photo-1600596542815-ffad4c1539a9");
+  await page
+    .getByLabel("Video or YouTube URLs")
+    .fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page).toHaveURL("/dashboard");
   await page
@@ -615,10 +629,14 @@ test("agent can register, create a draft and publish through the browser", async
     .click();
   await expect(
     page.getByRole("heading", { name: "A browser-tested home in Lekki" }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(
+    page.getByTitle("A browser-tested home in Lekki video 1"),
+  ).toBeVisible({ timeout: 15_000 });
   await page.getByRole("link", { name: "Hi, Browser" }).click();
   await expect(page).toHaveURL("/account");
   await page.getByLabel("Phone number").fill("+234 802 345 6789");
+  await page.getByLabel("WhatsApp number").fill("+234 802 345 6789");
   await page.getByRole("button", { name: "Save details" }).click();
   await expect(
     page.getByText("Your account details have been updated."),
@@ -653,11 +671,19 @@ test("agent profiles, amenities, inquiry statuses and administrator boundaries",
     (await owner.client.get(`${baseURL}/admin/queue/properties`)).status(),
   ).toBe(403);
   expect(
-    (await owner.client.post(`${baseURL}/images/signature`)).status(),
+    (
+      await owner.client.post(`${baseURL}/images/signature`, {
+        data: { resource_type: "image" },
+      })
+    ).status(),
   ).toBe(503);
   expect(
-    (await seeker.client.post(`${baseURL}/images/signature`)).status(),
-  ).toBe(403);
+    (
+      await seeker.client.post(`${baseURL}/images/signature`, {
+        data: { resource_type: "video" },
+      })
+    ).status(),
+  ).toBe(503);
   const amenities = await (
     await owner.client.get(`${baseURL}/amenities`)
   ).json();
@@ -788,6 +814,14 @@ test("administrator review is audited and verification stays independent", async
     "-c",
     `UPDATE users SET role='admin' WHERE id='${administrator.user.id}'`,
   ]);
+  const metricsResponse = await administrator.client.get(
+    `${baseURL}/admin/metrics`,
+  );
+  expect(metricsResponse.status()).toBe(200);
+  const metrics = await metricsResponse.json();
+  expect(metrics.total_users).toBeGreaterThanOrEqual(3);
+  expect(metrics.active_users).toBeGreaterThanOrEqual(3);
+  expect(metrics).toHaveProperty("photos_uploaded_today");
   const property = await create(
     owner.client,
     `Reviewed home ${crypto.randomUUID()}`,

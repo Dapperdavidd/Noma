@@ -14,6 +14,7 @@ const FILTER_KEYS = [
   "max_price",
   "min_bedrooms",
   "max_bedrooms",
+  "media",
   "amenities",
 ];
 
@@ -73,7 +74,7 @@ export function PropertyFilters() {
     const values = new FormData(event.currentTarget);
     const next = new URLSearchParams(params);
     for (const key of FILTER_KEYS) next.delete(key);
-    for (const key of FILTER_KEYS.slice(0, -1)) {
+    for (const key of FILTER_KEYS.filter((key) => key !== "amenities")) {
       const value = String(values.get(key) || "");
       if (value) next.set(key, value);
     }
@@ -257,6 +258,22 @@ export function PropertyFilters() {
                           Up to {count}
                         </option>
                       ))}
+                    </select>
+                  </label>
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>Listing media</legend>
+                <div className="filter-row two">
+                  <label>
+                    Photos and video
+                    <select
+                      name="media"
+                      defaultValue={params.get("media") || ""}
+                    >
+                      <option value="">Any media</option>
+                      <option value="photos">Has photos</option>
+                      <option value="videos">Has video</option>
                     </select>
                   </label>
                 </div>

@@ -11,7 +11,7 @@ import { Header, Footer, Notice, SearchBar, PropertyCard } from "../components";
 import { useFavorites } from "../favorites";
 import { PropertyFilters } from "../filters";
 
-export function Browse() {
+export function Browse({ discover = false }: { discover?: boolean }) {
   const [params, setParams] = useSearchParams();
   const [items, setItems] = useState<Property[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -20,11 +20,17 @@ export function Browse() {
   const [loadingMore, setLoadingMore] = useState(false);
   const favorites = useFavorites();
   const key = params.toString();
+  const requestKey =
+    discover && !params.has("sort")
+      ? `${key}${key ? "&" : ""}sort=featured`
+      : key;
   useEffect(() => {
     let active = true;
     setBusy(true);
     setError("");
-    api<{ data: Property[]; next_cursor: string | null }>(`/properties?${key}`)
+    api<{ data: Property[]; next_cursor: string | null }>(
+      `/properties?${requestKey}`,
+    )
       .then((v) => {
         if (active) {
           setItems(v.data);
@@ -40,7 +46,7 @@ export function Browse() {
     return () => {
       active = false;
     };
-  }, [key]);
+  }, [requestKey]);
   async function more() {
     setLoadingMore(true);
     try {
@@ -61,8 +67,19 @@ export function Browse() {
     <>
       <Header />
       <main className="section browse">
-        <div className="eyebrow">MAKE YOURSELF AT HOME</div>
-        <h1>Find your next chapter.</h1>
+        <div className="eyebrow">
+          {discover ? "DISCOVER REAL SPACES" : "MAKE YOURSELF AT HOME"}
+        </div>
+        <h1>
+          {discover
+            ? "Explore every published property."
+            : "Find your next chapter."}
+        </h1>
+        {discover && (
+          <p className="intro">
+            New, featured and verified rentals from people across Nigeria.
+          </p>
+        )}
         <SearchBar key={key} />
         <div className="results-toolbar">
           <span className="result-count">
@@ -76,7 +93,7 @@ export function Browse() {
               <SlidersHorizontal size={16} />
               <select
                 aria-label="Sort properties"
-                value={params.get("sort") || "newest"}
+                value={params.get("sort") || (discover ? "featured" : "newest")}
                 onChange={(e) => {
                   const next = new URLSearchParams(params);
                   next.set("sort", e.target.value);
@@ -85,6 +102,7 @@ export function Browse() {
                 }}
               >
                 <option value="newest">Newest first</option>
+                <option value="featured">Featured and verified</option>
                 <option value="price_asc">Price: low to high</option>
                 <option value="price_desc">Price: high to low</option>
               </select>
@@ -123,7 +141,10 @@ export function Browse() {
               No published properties match this search yet. Try another
               location or broaden your filters.
             </p>
-            <Link className="button olive" to="/properties">
+            <Link
+              className="button olive"
+              to={discover ? "/discover" : "/properties"}
+            >
               Clear filters <ArrowRight size={16} />
             </Link>
           </div>

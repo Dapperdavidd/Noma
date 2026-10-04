@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowRight, ArrowLeft, X } from "lucide-react";
 import { api, type Property, type Location } from "../api";
-import { uploadPhoto, type ManagedUpload } from "../uploads";
+import { uploadPhoto, uploadVideo, type ManagedUpload } from "../uploads";
 import { Notice } from "../components";
 
 export function ListingForm() {
@@ -15,11 +15,13 @@ export function ListingForm() {
   const [p, setP] = useState<Property | null>(null);
   const [state, setState] = useState("");
   const [city, setCity] = useState("");
-  const [type, setType] = useState("sale");
+  const [type, setType] = useState("rent");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [imageUrls, setImageUrls] = useState("");
   const [managedImages, setManagedImages] = useState<ManagedUpload[]>([]);
+  const [videoUrls, setVideoUrls] = useState("");
+  const [managedVideos, setManagedVideos] = useState<ManagedUpload[]>([]);
   const [uploading, setUploading] = useState(false);
   const pendingUploads = useRef(new Set<string>());
   const navigate = useNavigate();
@@ -43,6 +45,16 @@ export function ListingForm() {
                 upload_id: image.upload_id!,
                 public_id: image.public_id!,
                 url: image.url,
+              })) || [],
+          );
+          setVideoUrls(v.videos?.map((video) => video.url).join("\n") || "");
+          setManagedVideos(
+            v.videos
+              ?.filter((video) => video.upload_id && video.public_id)
+              .map((video) => ({
+                upload_id: video.upload_id!,
+                public_id: video.public_id!,
+                url: video.url,
               })) || [],
           );
           setState(v.state_id || "");
@@ -85,6 +97,28 @@ export function ListingForm() {
       setUploading(false);
     }
   }
+  async function videos(files: FileList | null) {
+    if (!files) return;
+    const existing = videoUrls.split("\n").filter(Boolean);
+    if (existing.length + files.length > 8) {
+      setError("A listing can have up to 8 videos.");
+      return;
+    }
+    setUploading(true);
+    setError("");
+    try {
+      for (const file of Array.from(files)) {
+        const video = await uploadVideo(file);
+        pendingUploads.current.add(video.upload_id);
+        setManagedVideos((old) => [...old, video]);
+        setVideoUrls((old) => (old ? `${old}\n${video.url}` : video.url));
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -98,6 +132,14 @@ export function ListingForm() {
         const managed = managedImages.find((image) => image.url === url);
         return managed ? { upload_id: managed.upload_id, url } : url;
       });
+    const videoValues = String(values.videos || "")
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map((url) => {
+        const managed = managedVideos.find((video) => video.url === url);
+        return managed ? { upload_id: managed.upload_id, url } : url;
+      });
     const body = {
       ...values,
       amenity_ids: selectedAmenities,
@@ -108,6 +150,7 @@ export function ListingForm() {
       area_id: values.area_id || null,
       rental_period: type === "sale" ? null : values.rental_period,
       images: imageValues,
+      videos: videoValues,
     };
     try {
       await api(p ? `/properties/${p.id}` : "/properties", {
@@ -115,7 +158,7 @@ export function ListingForm() {
         body: JSON.stringify(body),
       });
       const attached = new Set(
-        imageValues
+        [...imageValues, ...videoValues]
           .filter(
             (image): image is { upload_id: string; url: string } =>
               typeof image !== "string",
@@ -137,6 +180,10 @@ export function ListingForm() {
   const selectedState = locations.find((s) => s.id === state);
   const selectedCity = selectedState?.cities.find((c) => c.id === city);
   const imageList = imageUrls
+    .split("\n")
+    .map((url) => url.trim())
+    .filter(Boolean);
+  const videoList = videoUrls
     .split("\n")
     .map((url) => url.trim())
     .filter(Boolean);
@@ -170,18 +217,11 @@ export function ListingForm() {
               placeholder="e.g. A bright 3-bedroom apartment in Ikoyi"
             />
           </label>
+          <input type="hidden" name="listing_type" value={type} />
           <div className="form-row">
             <label>
               Listing type
-              <select
-                name="listing_type"
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-              >
-                <option value="sale">For sale</option>
-                <option value="rent">For rent</option>
-                <option value="short_let">Short let</option>
-              </select>
+              <input value="For rent" disabled />
             </label>
             <label>
               Property type
@@ -380,6 +420,59 @@ export function ListingForm() {
           <p className="fine-print">
             You can also paste existing image links, one per line.
           </p>
+          <h2>Property videos</h2>
+          <p className="muted">
+            Upload walkthroughs or paste YouTube links. Add up to 8 videos.
+          </p>
+          <label className="upload-zone">
+            {uploading ? "Uploading media…" : "Upload property videos"}
+            <input
+              type="file"
+              accept="video/mp4,video/webm,video/quicktime"
+              multiple
+              disabled={uploading}
+              onChange={(e) => void videos(e.target.files)}
+            />
+            <span>MP4, WebM or MOV · Up to 100 MB each</span>
+          </label>
+          <label>
+            Video or YouTube URLs
+            <textarea
+              name="videos"
+              rows={4}
+              value={videoUrls}
+              onChange={(e) => setVideoUrls(e.target.value)}
+              placeholder="https://www.youtube.com/watch?v=..."
+            />
+          </label>
+          {videoList.length > 0 && (
+            <div
+              className="listing-video-previews"
+              aria-label="Property videos"
+            >
+              {videoList.map((url, index) => (
+                <div key={`${url}-${index}`}>
+                  <VideoPreview
+                    url={url}
+                    title={`Property video ${index + 1}`}
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Remove property video ${index + 1}`}
+                    onClick={() =>
+                      setVideoUrls(
+                        videoList
+                          .filter((_, item) => item !== index)
+                          .join("\n"),
+                      )
+                    }
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <h2>Amenities</h2>
           <div className="amenity-picker">
             {amenities.map((a) => (
@@ -412,5 +505,33 @@ export function ListingForm() {
         </div>
       </form>
     </>
+  );
+}
+
+function youtubeId(url: string) {
+  try {
+    const parsed = new URL(url);
+    const id =
+      parsed.hostname === "youtu.be"
+        ? parsed.pathname.slice(1)
+        : parsed.searchParams.get("v") || parsed.pathname.split("/embed/")[1];
+    return id && /^[\w-]{11}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+function VideoPreview({ url, title }: { url: string; title: string }) {
+  const id = youtubeId(url);
+  return id ? (
+    <iframe
+      src={`https://www.youtube-nocookie.com/embed/${id}`}
+      title={title}
+      loading="lazy"
+      allow="accelerometer; encrypted-media; gyroscope; picture-in-picture"
+      allowFullScreen
+    />
+  ) : (
+    <video src={url} controls preload="metadata" aria-label={title} />
   );
 }

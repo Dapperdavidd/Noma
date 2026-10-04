@@ -12,6 +12,8 @@ import {
   MessageCircle,
   AlertTriangle,
   Check,
+  PlayCircle,
+  Send,
 } from "lucide-react";
 import { api, money, type Property } from "../api";
 import { hero } from "../demo";
@@ -126,6 +128,26 @@ export function Detail() {
                 </div>
               )}
             </div>
+            {p.videos && p.videos.length > 0 && (
+              <section className="property-videos">
+                <div className="section-heading">
+                  <div>
+                    <div className="eyebrow">WATCH THE WALKTHROUGH</div>
+                    <h2>See the space in motion.</h2>
+                  </div>
+                  <PlayCircle size={28} />
+                </div>
+                <div className="video-grid">
+                  {p.videos.map((video, index) => (
+                    <PropertyVideo
+                      key={video.id || video.url}
+                      url={video.url}
+                      title={`${p.title} video ${index + 1}`}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
             <div className="detail-columns">
               <div>
                 <div className="detail-stats">
@@ -185,6 +207,38 @@ export function Detail() {
                       <small>Verified agent</small>
                     )}
                   </div>
+                </div>
+                {p.agent?.whatsapp && (
+                  <a
+                    className="button whatsapp full"
+                    href={`https://wa.me/${p.agent.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(`Hello, I’m interested in ${p.title} on NOMA.`)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Contact on WhatsApp <MessageCircle size={17} />
+                  </a>
+                )}
+                <div className="social-contact-links">
+                  {p.agent?.telegram && (
+                    <a
+                      className="text-link"
+                      href={`https://t.me/${p.agent.telegram.replace(/^@/, "")}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Telegram <Send size={14} />
+                    </a>
+                  )}
+                  {p.agent?.instagram && (
+                    <a
+                      className="text-link"
+                      href={`https://instagram.com/${p.agent.instagram.replace(/^@/, "")}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Instagram <ArrowRight size={14} />
+                    </a>
+                  )}
                 </div>
                 {sent ? (
                   <Notice>
@@ -273,5 +327,33 @@ export function Detail() {
       </main>
       <Footer />
     </>
+  );
+}
+
+function youtubeId(url: string) {
+  try {
+    const parsed = new URL(url);
+    const id =
+      parsed.hostname === "youtu.be"
+        ? parsed.pathname.slice(1)
+        : parsed.searchParams.get("v") || parsed.pathname.split("/embed/")[1];
+    return id && /^[\w-]{11}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+function PropertyVideo({ url, title }: { url: string; title: string }) {
+  const id = youtubeId(url);
+  return id ? (
+    <iframe
+      src={`https://www.youtube-nocookie.com/embed/${id}`}
+      title={title}
+      loading="lazy"
+      allow="accelerometer; encrypted-media; gyroscope; picture-in-picture"
+      allowFullScreen
+    />
+  ) : (
+    <video src={url} controls preload="metadata" aria-label={title} />
   );
 }

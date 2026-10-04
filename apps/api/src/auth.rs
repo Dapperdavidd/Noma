@@ -27,6 +27,9 @@ pub struct User {
     pub first_name: String,
     pub last_name: String,
     pub phone: Option<String>,
+    pub whatsapp: Option<String>,
+    pub telegram: Option<String>,
+    pub instagram: Option<String>,
     pub role: String,
     pub is_verified: bool,
     pub has_password: bool,
@@ -144,7 +147,7 @@ pub fn spawn_session_cleanup(pool: PgPool) {
 
 pub async fn current(req: &HttpRequest, pool: &PgPool) -> Result<User, ApiError> {
     let token = req.cookie("noma_session").ok_or_else(unauthorized)?;
-    let user=sqlx::query_as::<_,User>("SELECT u.id,u.email,u.first_name,u.last_name,u.phone,u.role,u.is_verified,(u.password_hash IS NOT NULL) AS has_password FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=$1 AND s.expires_at>now() AND u.is_active").bind(hash_token(token.value())).fetch_optional(pool).await?.ok_or_else(unauthorized)?;
+    let user=sqlx::query_as::<_,User>("SELECT u.id,u.email,u.first_name,u.last_name,u.phone,u.whatsapp,u.telegram,u.instagram,u.role,u.is_verified,(u.password_hash IS NOT NULL) AS has_password FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=$1 AND s.expires_at>now() AND u.is_active").bind(hash_token(token.value())).fetch_optional(pool).await?.ok_or_else(unauthorized)?;
     Ok(user)
 }
 
@@ -195,7 +198,7 @@ pub async fn register(
     let hash = password_hash(body.password.clone()).await?;
     let mut tx = pool.begin().await?;
     let id = Uuid::new_v4();
-    let user=sqlx::query_as::<_,User>("INSERT INTO users(id,email,password_hash,first_name,last_name,role) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,email,first_name,last_name,phone,role,is_verified,true AS has_password").bind(id).bind(email).bind(hash).bind(first).bind(last).bind(role).fetch_one(&mut *tx).await?;
+    let user=sqlx::query_as::<_,User>("INSERT INTO users(id,email,password_hash,first_name,last_name,role) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,email,first_name,last_name,phone,whatsapp,telegram,instagram,role,is_verified,true AS has_password").bind(id).bind(email).bind(hash).bind(first).bind(last).bind(role).fetch_one(&mut *tx).await?;
     if role == "agent" {
         sqlx::query("INSERT INTO agent_profiles(id,user_id) VALUES($1,$2)")
             .bind(Uuid::new_v4())
@@ -232,7 +235,7 @@ pub async fn login(
         return Err(unauthorized());
     }
     let user = sqlx::query_as::<_, User>(
-        "SELECT id,email,first_name,last_name,phone,role,is_verified,(password_hash IS NOT NULL) AS has_password FROM users WHERE id=$1",
+        "SELECT id,email,first_name,last_name,phone,whatsapp,telegram,instagram,role,is_verified,(password_hash IS NOT NULL) AS has_password FROM users WHERE id=$1",
     )
     .bind(row.0)
     .fetch_one(pool.get_ref())
@@ -248,6 +251,36 @@ pub struct AccountProfile {
     first_name: String,
     last_name: String,
     phone: Option<String>,
+    whatsapp: Option<String>,
+    telegram: Option<String>,
+    instagram: Option<String>,
+}
+
+fn optional_text(value: &Option<String>) -> Option<&str> {
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn valid_phone(value: &str) -> bool {
+    let digits = value
+        .chars()
+        .filter(|character| character.is_ascii_digit())
+        .count();
+    (7..=15).contains(&digits)
+        && value.len() <= 30
+        && value
+            .chars()
+            .all(|character| character.is_ascii_digit() || "+ -()".contains(character))
+}
+
+fn valid_handle(value: &str) -> bool {
+    let handle = value.strip_prefix('@').unwrap_or(value);
+    (2..=64).contains(&handle.len())
+        && handle
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "_.".contains(character))
 }
 
 pub async fn update_profile(
@@ -263,31 +296,29 @@ pub async fn update_profile(
             "First and last names are required (maximum 100 characters)",
         ));
     }
-    let phone = body
-        .phone
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    if let Some(value) = phone {
-        let digits = value
-            .chars()
-            .filter(|character| character.is_ascii_digit())
-            .count();
-        if !(7..=15).contains(&digits)
-            || value.len() > 30
-            || !value
-                .chars()
-                .all(|character| character.is_ascii_digit() || "+ -()".contains(character))
-        {
-            return Err(bad("Use a valid phone number"));
-        }
+    let phone = optional_text(&body.phone);
+    let whatsapp = optional_text(&body.whatsapp);
+    let telegram = optional_text(&body.telegram);
+    let instagram = optional_text(&body.instagram);
+    if phone.is_some_and(|value| !valid_phone(value))
+        || whatsapp.is_some_and(|value| !valid_phone(value))
+    {
+        return Err(bad("Use valid phone and WhatsApp numbers"));
+    }
+    if telegram.is_some_and(|value| !valid_handle(value))
+        || instagram.is_some_and(|value| !valid_handle(value))
+    {
+        return Err(bad("Use valid Telegram and Instagram handles"));
     }
     let updated = sqlx::query_as::<_, User>(
-        "UPDATE users SET first_name=$1,last_name=$2,phone=$3,updated_at=now() WHERE id=$4 RETURNING id,email,first_name,last_name,phone,role,is_verified,(password_hash IS NOT NULL) AS has_password",
+        "UPDATE users SET first_name=$1,last_name=$2,phone=$3,whatsapp=$4,telegram=$5,instagram=$6,updated_at=now() WHERE id=$7 RETURNING id,email,first_name,last_name,phone,whatsapp,telegram,instagram,role,is_verified,(password_hash IS NOT NULL) AS has_password",
     )
     .bind(first)
     .bind(last)
     .bind(phone)
+    .bind(whatsapp)
+    .bind(telegram)
+    .bind(instagram)
     .bind(user.id)
     .fetch_one(pool.get_ref())
     .await?;
@@ -382,7 +413,7 @@ pub async fn google_sign_in(
     let email = claims.email.trim().to_lowercase();
     let mut tx = pool.begin().await?;
     let existing_identity = sqlx::query_as::<_, User>(
-        "SELECT u.id,u.email,u.first_name,u.last_name,u.phone,u.role,u.is_verified,(u.password_hash IS NOT NULL) AS has_password FROM users u JOIN user_identities i ON i.user_id=u.id WHERE i.provider='google' AND i.subject=$1 AND u.is_active",
+        "SELECT u.id,u.email,u.first_name,u.last_name,u.phone,u.whatsapp,u.telegram,u.instagram,u.role,u.is_verified,(u.password_hash IS NOT NULL) AS has_password FROM users u JOIN user_identities i ON i.user_id=u.id WHERE i.provider='google' AND i.subject=$1 AND u.is_active",
     )
     .bind(&claims.sub)
     .fetch_optional(&mut *tx)
@@ -390,7 +421,7 @@ pub async fn google_sign_in(
     let user = if let Some(user) = existing_identity {
         user
     } else if let Some(user) = sqlx::query_as::<_, User>(
-        "UPDATE users SET is_verified=true,updated_at=now() WHERE email=$1 AND is_active RETURNING id,email,first_name,last_name,phone,role,is_verified,(password_hash IS NOT NULL) AS has_password",
+        "UPDATE users SET is_verified=true,updated_at=now() WHERE email=$1 AND is_active RETURNING id,email,first_name,last_name,phone,whatsapp,telegram,instagram,role,is_verified,(password_hash IS NOT NULL) AS has_password",
     )
     .bind(&email)
     .fetch_optional(&mut *tx)
@@ -421,7 +452,7 @@ pub async fn google_sign_in(
         let id = Uuid::new_v4();
         let (first, last) = names(&claims);
         let user = sqlx::query_as::<_, User>(
-            "INSERT INTO users(id,email,password_hash,first_name,last_name,role,is_verified) VALUES($1,$2,NULL,$3,$4,$5,true) RETURNING id,email,first_name,last_name,phone,role,is_verified,false AS has_password",
+            "INSERT INTO users(id,email,password_hash,first_name,last_name,role,is_verified) VALUES($1,$2,NULL,$3,$4,$5,true) RETURNING id,email,first_name,last_name,phone,whatsapp,telegram,instagram,role,is_verified,false AS has_password",
         )
         .bind(id)
         .bind(&email)

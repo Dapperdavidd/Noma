@@ -18,6 +18,26 @@ async fn admin(req: &HttpRequest, pool: &PgPool) -> Result<auth::User, ApiError>
     }
     Ok(user)
 }
+
+pub async fn metrics(req: HttpRequest, pool: web::Data<PgPool>) -> Result<HttpResponse, ApiError> {
+    admin(&req, &pool).await?;
+    let data: Value = sqlx::query_scalar(
+        "SELECT jsonb_build_object(
+          'total_users',(SELECT count(*) FROM users WHERE is_active),
+          'active_users',(SELECT count(DISTINCT user_id) FROM sessions WHERE expires_at>now()),
+          'property_seekers',(SELECT count(*) FROM users WHERE is_active AND role='user'),
+          'new_users_today',(SELECT count(*) FROM users WHERE created_at>=current_date),
+          'total_properties',(SELECT count(*) FROM properties),
+          'published_properties',(SELECT count(*) FROM properties WHERE status='active'),
+          'properties_updated_today',(SELECT count(*) FROM properties WHERE updated_at>=current_date),
+          'photos_uploaded_today',(SELECT count(*) FROM image_uploads WHERE resource_type='image' AND created_at>=current_date),
+          'videos_uploaded_today',(SELECT count(*) FROM image_uploads WHERE resource_type='video' AND created_at>=current_date),
+          'open_reports',(SELECT count(*) FROM property_reports WHERE status='open'))",
+    )
+    .fetch_one(pool.get_ref())
+    .await?;
+    Ok(HttpResponse::Ok().json(data))
+}
 fn paged(mut data: Vec<Value>, limit: i64) -> Value {
     let more = data.len() > limit as usize;
     data.truncate(limit as usize);
@@ -43,7 +63,7 @@ pub async fn queue(
         "properties" => {
             let mut query: QueryBuilder<Postgres> =
                 QueryBuilder::new(crate::properties::repository::CARD);
-            query.push(" WHERE p.status IN ('active','suspended') AND NOT p.is_verified");
+            query.push(" WHERE p.status IN ('active','suspended')");
             if let Some((created_at, id)) = cursor_value {
                 query
                     .push(" AND (p.created_at,p.id)>(")
@@ -116,6 +136,8 @@ pub async fn review(
  ("property","verify")=>sqlx::query("UPDATE properties SET is_verified=true,updated_at=now() WHERE id=$1 AND status='active'").bind(*id).execute(&mut *tx).await?,
  ("property","suspend")=>sqlx::query("UPDATE properties SET status='suspended',is_verified=false,updated_at=now() WHERE id=$1").bind(*id).execute(&mut *tx).await?,
  ("property","restore")=>sqlx::query("UPDATE properties SET status='draft',updated_at=now() WHERE id=$1 AND status='suspended'").bind(*id).execute(&mut *tx).await?,
+ ("property","feature")=>sqlx::query("UPDATE properties SET featured_until=now()+interval '30 days',updated_at=now() WHERE id=$1 AND status='active'").bind(*id).execute(&mut *tx).await?,
+ ("property","unfeature")=>sqlx::query("UPDATE properties SET featured_until=NULL,updated_at=now() WHERE id=$1").bind(*id).execute(&mut *tx).await?,
  ("agent","verify"|"reject")=>sqlx::query("UPDATE agent_profiles SET verification_status=$1,updated_at=now() WHERE user_id=$2").bind(if body.action=="verify"{"verified"}else{"rejected"}).bind(*id).execute(&mut *tx).await?,
  _=>return Err(bad("Invalid review action"))};
     if changed.rows_affected() == 0 {
@@ -170,7 +192,8 @@ pub async fn review_report(
     Ok(HttpResponse::NoContent().finish())
 }
 pub fn routes(cfg: &mut web::ServiceConfig) {
-    cfg.route("/admin/queue/{kind}", web::get().to(queue))
+    cfg.route("/admin/metrics", web::get().to(metrics))
+        .route("/admin/queue/{kind}", web::get().to(queue))
         .route("/admin/reviews/{id}", web::post().to(review))
         .route("/admin/reports/{id}", web::patch().to(review_report));
 }

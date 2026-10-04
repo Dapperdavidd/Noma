@@ -93,7 +93,7 @@ export function Dashboard() {
     <>
       <div className="section-heading">
         <div>
-          <div className="eyebrow">YOUR AGENT SPACE</div>
+          <div className="eyebrow">YOUR PROPERTY SPACE</div>
           <h1>A little overview.</h1>
         </div>
         <Link className="button olive" to="/dashboard/new">
@@ -101,9 +101,11 @@ export function Dashboard() {
         </Link>
       </div>
       <div className="dashboard-links">
-        <Link className="text-link" to="/dashboard/profile">
-          Edit agent profile <ArrowUpRight size={15} />
-        </Link>
+        {(user?.role === "agent" || user?.role === "admin") && (
+          <Link className="text-link" to="/dashboard/profile">
+            Edit agent profile <ArrowUpRight size={15} />
+          </Link>
+        )}
         {user?.role === "admin" && (
           <Link className="text-link" to="/admin">
             Review and verification <ArrowUpRight size={15} />

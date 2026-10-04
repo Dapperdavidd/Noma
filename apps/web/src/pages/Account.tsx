@@ -71,11 +71,9 @@ export function Account() {
           <h1>Keep your details current.</h1>
           <p className="muted">Signed in as {user.email}</p>
         </div>
-        {(user.role === "agent" || user.role === "admin") && (
-          <Link className="text-link" to="/dashboard">
-            Agent dashboard <ArrowRight size={15} />
-          </Link>
-        )}
+        <Link className="text-link" to="/dashboard">
+          Property dashboard <ArrowRight size={15} />
+        </Link>
       </div>
       {error && <Notice>{error}</Notice>}
       {profileSaved && <Notice>Your account details have been updated.</Notice>}
@@ -125,6 +123,40 @@ export function Account() {
                 placeholder="+234 800 000 0000"
               />
             </label>
+            <label>
+              WhatsApp number
+              <input
+                name="whatsapp"
+                type="tel"
+                maxLength={30}
+                defaultValue={user.whatsapp || ""}
+                placeholder="+234 800 000 0000"
+              />
+            </label>
+            <div className="form-row">
+              <label>
+                Telegram handle
+                <input
+                  name="telegram"
+                  maxLength={65}
+                  defaultValue={user.telegram || ""}
+                  placeholder="@yourhandle"
+                />
+              </label>
+              <label>
+                Instagram handle
+                <input
+                  name="instagram"
+                  maxLength={65}
+                  defaultValue={user.instagram || ""}
+                  placeholder="@yourhandle"
+                />
+              </label>
+            </div>
+            <p className="fine-print">
+              WhatsApp is shown first on your published listings. Telegram and
+              Instagram appear when you provide them.
+            </p>
             <button className="button olive" disabled={busy !== null}>
               {busy === "profile" ? "Saving…" : "Save details"}
             </button>

@@ -14,6 +14,7 @@ pub struct Search {
     pub min_bedrooms: Option<i16>,
     pub max_bedrooms: Option<i16>,
     pub amenities: Option<String>,
+    pub media: Option<String>,
     pub sort: Option<String>,
     pub cursor: Option<String>,
     pub limit: Option<i64>,
@@ -23,6 +24,28 @@ pub struct Search {
 pub enum ListingImage {
     External(String),
     Managed { upload_id: Uuid, url: String },
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum ListingVideo {
+    External(String),
+    Managed { upload_id: Uuid, url: String },
+}
+
+impl ListingVideo {
+    pub fn url(&self) -> &str {
+        match self {
+            Self::External(url) | Self::Managed { url, .. } => url,
+        }
+    }
+
+    pub fn upload_id(&self) -> Option<Uuid> {
+        match self {
+            Self::External(_) => None,
+            Self::Managed { upload_id, .. } => Some(*upload_id),
+        }
+    }
 }
 
 impl ListingImage {
@@ -56,6 +79,8 @@ pub struct Listing {
     pub area_id: Option<Uuid>,
     pub address: String,
     pub images: Vec<ListingImage>,
+    #[serde(default)]
+    pub videos: Vec<ListingVideo>,
     #[serde(default)]
     pub amenity_ids: Vec<Uuid>,
 }
@@ -113,6 +138,15 @@ impl Listing {
         {
             return Err(bad("Provide 1–20 HTTPS image URLs"));
         }
+        if self.videos.len() > 8
+            || self
+                .videos
+                .iter()
+                .map(ListingVideo::url)
+                .any(|url| !url.starts_with("https://") || url.len() > 2048)
+        {
+            return Err(bad("Provide up to 8 HTTPS video or YouTube URLs"));
+        }
         let mut upload_ids = self
             .images
             .iter()
@@ -123,6 +157,17 @@ impl Listing {
         upload_ids.dedup();
         if upload_ids.len() != managed_count {
             return Err(bad("A managed photo cannot be used more than once"));
+        }
+        let mut video_upload_ids = self
+            .videos
+            .iter()
+            .filter_map(ListingVideo::upload_id)
+            .collect::<Vec<_>>();
+        let video_managed_count = video_upload_ids.len();
+        video_upload_ids.sort_unstable();
+        video_upload_ids.dedup();
+        if video_upload_ids.len() != video_managed_count {
+            return Err(bad("A managed video cannot be used more than once"));
         }
         Ok(())
     }

@@ -17,7 +17,7 @@ npm run dev
 
 Open http://localhost:5173. The API listens on http://127.0.0.1:8080. Vite proxies `/api` to the API. SQL migrations run at API startup. Configure `DATABASE_URL` for your own PostgreSQL installation if not using Docker. Never commit `.env`.
 
-The location catalog includes all 36 states and the Federal Capital Territory, with one primary city in each and selected launch areas in Lagos, Abuja, and Port Harcourt. No fake accounts or live properties are seeded. The homepage displays clearly labeled illustrative cards until real listings exist. Register an agent account to create a draft, then publish from the dashboard.
+The location catalog includes all 36 states and the Federal Capital Territory, with one primary city in each and selected launch areas in Lagos, Abuja, and Port Harcourt. No fake accounts or live properties are seeded. The homepage displays clearly labeled illustrative cards until real listings exist. Any signed-in user can create a rental draft, then publish it from the property dashboard.
 
 ## Structure
 
@@ -41,7 +41,7 @@ TEST_DATABASE_URL=postgres://noma:noma@localhost:5432/noma_test npm test
 
 ## Working flows
 
-Account registration and sign-in; Google identity linking; email verification and single-use password recovery; personal detail updates and secure password rotation; property seeker and agent roles; server-side ownership checks; draft creation and editing; publish/archive/status management; full-text search; normalized state/city/area filters; budget, bedroom and multi-amenity filters; price sorting with stable cursor pagination; property details and galleries; saved properties; inquiries and an agent dashboard. Signed-in buyers can report suspicious listings, and administrators resolve those reports through an auditable review queue. Images accept externally hosted HTTPS URLs and signed direct Cloudinary uploads when configured. Managed uploads are confirmed server-side, tied to their owner and listing, and cleaned up when discarded or removed. No image binaries are stored in PostgreSQL.
+Account registration and sign-in; Google identity linking; email verification and single-use password recovery; contact profiles and secure password rotation; server-side ownership checks; rental draft creation and editing; publish/archive/status management; full-text search; normalized state/city/area filters; budget, bedroom, media and multi-amenity filters; featured and verified discovery; stable cursor pagination; photo galleries; uploaded video and YouTube walkthroughs; saved properties; WhatsApp-first contact; inquiries and a property dashboard. Signed-in users can report suspicious listings, and administrators see marketplace metrics and resolve reports through an auditable review queue. Media accepts externally hosted HTTPS URLs and signed direct Cloudinary uploads when configured. Managed uploads are confirmed server-side, tied to their owner and listing, and cleaned up when discarded or removed. No media binaries are stored in PostgreSQL.
 
 ## Before public launch
 
@@ -57,15 +57,15 @@ Set `GOOGLE_CLIENT_ID` to a Google Identity Services web client ID. The API publ
 
 For a single-host deployment, set `DATABASE_URL`, `WEB_ORIGINS` (a comma-separated allowlist containing the exact public HTTPS origin), and the Cloudinary variables in a private environment file, then run `docker compose -f compose.production.yaml up --build -d`. `WEB_ORIGIN` remains supported for a single origin. The production compose file intentionally does not create a database; use a backed-up managed PostgreSQL service or a separately operated database. No provider account is required to build or run the images locally.
 
-## Image uploads
+## Media uploads
 
-Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, and `CLOUDINARY_UPLOAD_PRESET` in the API environment. Create a **signed** preset restricting formats to JPEG/PNG/WebP/AVIF and maximum file size to 10 MB. Secrets never belong in `VITE_*` variables. The API signs a unique per-agent public ID, disables overwrites, and the browser uploads directly to Cloudinary. Without credentials, image links remain usable and uploads return an explicit unavailable response. Upload signatures follow [Cloudinary's official signing specification](https://cloudinary.com/documentation/authentication_signatures). The connected development account has passed a live upload, confirmation and deletion cycle.
+Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, and `CLOUDINARY_UPLOAD_PRESET` in the API environment. Create a **signed** preset that permits the intended image formats (JPEG/PNG/WebP/AVIF) and video formats (MP4/WebM/MOV), with limits matching the application’s 10 MB photo and 100 MB video limits. Secrets never belong in `VITE_*` variables. The API signs a unique per-user public ID, disables overwrites, and the browser uploads directly to Cloudinary. Without credentials, HTTPS image/video links and YouTube links remain usable while direct uploads return an explicit unavailable response. Upload signatures follow [Cloudinary's official signing specification](https://cloudinary.com/documentation/authentication_signatures).
 
 Each signed upload creates a short-lived database intent. After the browser upload, the API independently verifies the public ID with Cloudinary before it can be attached to a listing. Upload IDs cannot be reused by another account or attached twice. The form discards unused uploads when possible; stale and failed deletions are retried in bounded batches when another upload begins.
 
 ## Administration
 
-The `/admin` review queue is available only to database-provisioned administrators. Public registration cannot create administrators. Provision the initial trusted account with an audited database operation after it has registered; no default admin password exists. Property and agent verification are separate and every review action records an actor and reason. Agents can edit their profiles at `/dashboard/profile` and manage inquiry progress in their dashboard.
+The `/admin` operations dashboard is available only to database-provisioned administrators. It reports user, session, property, daily media and moderation counts and includes the review queues. Public registration cannot create administrators. Provision the initial trusted account with an audited database operation after it has registered; no default admin password exists. Property and agent verification are separate, featured placement is time-limited, and every review action records an actor and reason. Agents can edit their professional profiles at `/dashboard/profile`; every user can manage their own listings and inquiry progress in the property dashboard.
 
 ## Test database and benchmarks
 

@@ -1,5 +1,5 @@
 import { useCallback, useState, type FormEvent } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { api, type User } from "../api";
 import { hero } from "../demo";
@@ -10,17 +10,22 @@ import { GoogleButton } from "../GoogleButton";
 export function Authentication() {
   const [params] = useSearchParams();
   const isJoin = location.pathname === "/join";
-  const { refresh } = useAuth();
+  const { user: currentUser, loading, refresh } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const role = params.get("role") === "agent" ? "agent" : "user";
+  const requested = params.get("next");
+  const next =
+    requested?.startsWith("/") && !requested.startsWith("//")
+      ? requested
+      : "/discover";
   const signedIn = useCallback(
-    async (user: User) => {
+    async (_user: User) => {
       await refresh();
-      navigate(user.role === "agent" ? "/dashboard" : "/properties");
+      navigate(next, { replace: true });
     },
-    [navigate, refresh],
+    [navigate, next, refresh],
   );
   const googleError = useCallback((message: string) => setError(message), []);
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -39,6 +44,7 @@ export function Authentication() {
       setBusy(false);
     }
   }
+  if (!loading && currentUser) return <Navigate to={next} replace />;
   return (
     <>
       <Header />
@@ -131,7 +137,9 @@ export function Authentication() {
           )}
           <p className="auth-switch">
             {isJoin ? "Already have an account?" : "New to NOMA?"}{" "}
-            <Link to={isJoin ? "/login" : "/join"}>
+            <Link
+              to={`${isJoin ? "/login" : "/join"}${requested ? `?next=${encodeURIComponent(next)}` : ""}`}
+            >
               {isJoin ? "Sign in" : "Create an account"}
             </Link>
           </p>

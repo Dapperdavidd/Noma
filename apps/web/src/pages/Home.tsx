@@ -11,13 +11,15 @@ import { api, type Property } from "../api";
 import { hero, samples } from "../demo";
 import { Header, Footer, Notice, SearchBar, PropertyCard } from "../components";
 import { useFavorites } from "../favorites";
+import { useAuth } from "../auth";
 
 export function Home() {
+  const { user } = useAuth();
   const [properties, setProperties] = useState<Property[]>([]);
   const [loaded, setLoaded] = useState(false);
   const favorites = useFavorites();
   useEffect(() => {
-    api<{ data: Property[] }>("/properties?limit=4")
+    api<{ data: Property[] }>("/properties?limit=4&sort=featured")
       .then((v) => setProperties(v.data))
       .catch(() => {})
       .finally(() => setLoaded(true));
@@ -41,8 +43,7 @@ export function Home() {
           </h1>
           <p>
             Discover homes, apartments and spaces across Nigeria.
-            <br className="desktop" /> Whether you’re buying, renting or
-            starting a new
+            <br className="desktop" /> Whether you’re renting or starting a new
             <br className="desktop" /> chapter — we’ll help you feel at home.
           </p>
           <SearchBar initial />
@@ -65,7 +66,7 @@ export function Home() {
                 Explore top listings<span className="olive-dot">.</span>
               </h2>
             </div>
-            <Link className="text-link" to="/properties">
+            <Link className="text-link" to="/discover">
               Explore all properties <ArrowRight size={17} />
             </Link>
           </div>
@@ -97,9 +98,11 @@ export function Home() {
               <br />
               Your next beginning.
             </h2>
-            <Link className="text-link" to="/join?role=agent">
-              List with NOMA <ArrowUpRight size={18} />
-            </Link>
+            {user && (
+              <Link className="text-link" to="/dashboard/new">
+                List with NOMA <ArrowUpRight size={18} />
+              </Link>
+            )}
           </div>
           <div className="banner-feature">
             <ShieldCheck />
@@ -117,13 +120,15 @@ export function Home() {
               starts with a conversation.
             </p>
           </div>
-          <Link
-            to="/join?role=agent"
-            className="round-link"
-            aria-label="Start listing"
-          >
-            <ArrowRight />
-          </Link>
+          {user && (
+            <Link
+              to="/dashboard/new"
+              className="round-link"
+              aria-label="Start listing"
+            >
+              <ArrowRight />
+            </Link>
+          )}
         </section>
         <section className="section neighborhoods">
           <div className="section-heading">

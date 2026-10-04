@@ -1,5 +1,5 @@
 import { createContext, useContext, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import type { User } from "./api";
 
@@ -19,13 +19,18 @@ export function Protected({
   agent?: boolean;
 }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
+  const next = `${location.pathname}${location.search}`;
   if (loading) return <main className="section">Loading your account…</main>;
   if (!user)
     return (
       <main className="section empty">
         <h1>Make yourself at home.</h1>
         <p>Sign in to access this part of NOMA.</p>
-        <Link className="button olive" to="/login">
+        <Link
+          className="button olive"
+          to={`/login?next=${encodeURIComponent(next)}`}
+        >
           Sign in <ArrowRight size={16} />
         </Link>
       </main>

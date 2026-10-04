@@ -1,7 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Link, NavLink, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  ArrowUpRight,
   ArrowRight,
   Search,
   Heart,
@@ -12,6 +11,8 @@ import {
   Menu,
   X,
   LogOut,
+  BadgeCheck,
+  Video,
 } from "lucide-react";
 import { api, money, type Property } from "./api";
 import { hero } from "./demo";
@@ -42,26 +43,20 @@ export function Header({ overlay = false }: { overlay?: boolean }) {
         {open ? <X /> : <Menu />}
       </button>
       <nav className={open ? "open" : ""} onClick={() => setOpen(false)}>
-        <NavLink to="/properties?listing_type=sale">Buy</NavLink>
-        <NavLink to="/properties?listing_type=rent">Rent</NavLink>
-        <NavLink to="/properties?listing_type=short_let">Short let</NavLink>
         <NavLink to="/discover">Discover</NavLink>
-        <NavLink
-          to={
-            user?.role === "agent" || user?.role === "admin"
-              ? "/dashboard/new"
-              : "/join?role=agent"
-          }
-        >
-          List property <ArrowUpRight size={13} />
-        </NavLink>
+        <NavLink to="/properties?listing_type=rent">Rent</NavLink>
+        {user && <NavLink to="/dashboard/new">List property</NavLink>}
       </nav>
       <div className="header-actions">
-        <Link className="icon-button" to="/saved" aria-label="Saved properties">
-          <Heart size={19} />
-        </Link>
         {user ? (
           <>
+            <Link
+              className="icon-button"
+              to="/saved"
+              aria-label="Saved properties"
+            >
+              <Heart size={19} />
+            </Link>
             <Link to="/account" className="sign-in">
               Hi, {user.first_name}
             </Link>
@@ -78,20 +73,16 @@ export function Header({ overlay = false }: { overlay?: boolean }) {
             </button>
           </>
         ) : (
-          <>
-            <Link className="sign-in" to="/login">
-              Sign in
-            </Link>
-            <Link className="button cream small" to="/join">
-              Get started <ArrowUpRight size={14} />
-            </Link>
-          </>
+          <Link className="sign-in" to="/login">
+            Sign in / Log in
+          </Link>
         )}
       </div>
     </header>
   );
 }
 export function Footer() {
+  const { user } = useAuth();
   return (
     <footer>
       <div>
@@ -104,10 +95,10 @@ export function Footer() {
         </p>
       </div>
       <div className="footer-links">
-        <Link to="/properties?listing_type=sale">Buy a home</Link>
+        <Link to="/discover">Discover properties</Link>
         <Link to="/properties?listing_type=rent">Find a rental</Link>
-        <Link to="/join?role=agent">List your property</Link>
-        <Link to="/discover">About NOMA</Link>
+        {user && <Link to="/dashboard/new">List your property</Link>}
+        {user && <Link to="/account">Your profile</Link>}
       </div>
       <div className="footer-bottom">
         <span>
@@ -122,7 +113,7 @@ export function Footer() {
 }
 export function SearchBar({ initial = false }: { initial?: boolean }) {
   const [params] = useSearchParams();
-  const [type, setType] = useState(params.get("listing_type") || "sale");
+  const type = "rent";
   const navigate = useNavigate();
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -137,22 +128,13 @@ export function SearchBar({ initial = false }: { initial?: boolean }) {
       onSubmit={submit}
       className={initial ? "search-wrap" : "search-wrap compact"}
     >
-      <div className="search-tabs">
-        {[
-          ["sale", "Buy"],
-          ["rent", "Rent"],
-          ["short_let", "Short let"],
-        ].map(([value, label]) => (
-          <button
-            type="button"
-            key={value}
-            className={type === value ? "active" : ""}
-            onClick={() => setType(value)}
-          >
-            {label}
+      {initial && (
+        <div className="search-tabs single">
+          <button type="button" className="active">
+            Rent
           </button>
-        ))}
-      </div>
+        </div>
+      )}
       <div className="search-bar">
         <label className="location-input">
           <Search size={20} />
@@ -246,6 +228,19 @@ export function PropertyCard({
               ? "For rent"
               : "Short let"}
         </span>
+        <div className="media-badges">
+          {p.is_featured && <span>Featured</span>}
+          {p.is_verified && (
+            <span>
+              <BadgeCheck size={13} /> Verified
+            </span>
+          )}
+          {p.has_video && (
+            <span>
+              <Video size={13} /> Video
+            </span>
+          )}
+        </div>
         <button
           className={`save-button ${saved ? "saved" : ""}`}
           aria-label={saved ? "Remove from saved properties" : "Save property"}

@@ -2064,3 +2064,116 @@ form .amenity-picker input {
     padding: 22px;
   }
 }
+
+.media-badges {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.media-badges span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(251, 250, 244, 0.92);
+  color: #26301f;
+  font-size: 10px;
+  font-weight: 650;
+  backdrop-filter: blur(8px);
+}
+.listing-video-previews,
+.video-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.listing-video-previews > div {
+  position: relative;
+}
+.listing-video-previews iframe,
+.listing-video-previews video,
+.video-grid iframe,
+.video-grid video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 8px;
+  background: #111;
+  object-fit: cover;
+}
+.listing-video-previews button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(20, 25, 17, 0.88);
+  color: white;
+  cursor: pointer;
+}
+.property-videos {
+  margin: 42px 0;
+}
+.property-videos .section-heading {
+  margin-bottom: 20px;
+}
+.button.whatsapp {
+  margin: 18px 0 12px;
+  background: #1f7a45;
+  color: white;
+}
+.social-contact-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.admin-overview {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin: 34px 0 44px;
+}
+.admin-overview article {
+  min-height: 118px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7f6ef;
+}
+.admin-overview span {
+  display: block;
+  min-height: 34px;
+  color: #6e7568;
+  font-size: 11px;
+}
+.admin-overview strong {
+  display: block;
+  margin-top: 10px;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 30px;
+  font-weight: 400;
+}
+@media (max-width: 1100px) {
+  .admin-overview {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 700px) {
+  .listing-video-previews,
+  .video-grid {
+    grid-template-columns: 1fr;
+  }
+  .admin-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -1,4 +1,4 @@
-use super::dto::{Listing, ListingImage, Search, Status};
+use super::dto::{Listing, ListingImage, ListingVideo, Search, Status};
 use crate::{
     auth,
     error::{ApiError, bad},
@@ -8,11 +8,11 @@ use actix_web::http::StatusCode;
 use serde_json::{Value, json};
 use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
-pub(crate) const CARD: &str = "SELECT jsonb_build_object('id',p.id,'title',p.title,'slug',p.slug,'price',p.price,'listing_type',p.listing_type,'property_type',p.property_type,'rental_period',p.rental_period,'bedrooms',p.bedrooms,'bathrooms',p.bathrooms,'size_sqm',p.size_sqm,'status',p.status,'is_verified',p.is_verified,'created_at',p.created_at,'city',c.name,'state',s.name,'area',a.name,'cover_image',(SELECT url FROM property_images WHERE property_id=p.id ORDER BY is_cover DESC,position LIMIT 1)) FROM properties p JOIN cities c ON c.id=p.city_id JOIN states s ON s.id=p.state_id LEFT JOIN areas a ON a.id=p.area_id";
+pub(crate) const CARD: &str = "SELECT jsonb_build_object('id',p.id,'title',p.title,'slug',p.slug,'price',p.price,'listing_type',p.listing_type,'property_type',p.property_type,'rental_period',p.rental_period,'bedrooms',p.bedrooms,'bathrooms',p.bathrooms,'size_sqm',p.size_sqm,'status',p.status,'is_verified',p.is_verified,'is_featured',COALESCE(p.featured_until>now(),false),'has_video',EXISTS(SELECT 1 FROM property_videos WHERE property_id=p.id),'created_at',p.created_at,'city',c.name,'state',s.name,'area',a.name,'cover_image',(SELECT url FROM property_images WHERE property_id=p.id ORDER BY is_cover DESC,position LIMIT 1)) FROM properties p JOIN cities c ON c.id=p.city_id JOIN states s ON s.id=p.state_id LEFT JOIN areas a ON a.id=p.area_id";
 pub async fn search(pool: &PgPool, query: &Search) -> Result<Value, ApiError> {
     let limit = query.limit.unwrap_or(20).clamp(1, 50);
     let sort = query.sort.as_deref().unwrap_or("newest");
-    if !["newest", "price_asc", "price_desc"].contains(&sort) {
+    if !["newest", "price_asc", "price_desc", "featured"].contains(&sort) {
         return Err(bad("Invalid sort order"));
     }
     if query
@@ -32,6 +32,13 @@ pub async fn search(pool: &PgPool, query: &Search) -> Result<Value, ApiError> {
         })
     {
         return Err(bad("Invalid property or listing type"));
+    }
+    if query
+        .media
+        .as_deref()
+        .is_some_and(|value| !["photos", "videos"].contains(&value))
+    {
+        return Err(bad("Invalid media filter"));
     }
     if query.min_price.is_some_and(|v| v < 0)
         || query.max_price.is_some_and(|v| v < 0)
@@ -94,12 +101,46 @@ pub async fn search(pool: &PgPool, query: &Search) -> Result<Value, ApiError> {
             qb.push(" AND EXISTS(SELECT 1 FROM property_amenities pa WHERE pa.property_id=p.id AND pa.amenity_id=").push_bind(id).push(")");
         }
     }
+    match query.media.as_deref() {
+        Some("photos") => {
+            qb.push(" AND EXISTS(SELECT 1 FROM property_images pi WHERE pi.property_id=p.id)")
+        }
+        Some("videos") => {
+            qb.push(" AND EXISTS(SELECT 1 FROM property_videos pv WHERE pv.property_id=p.id)")
+        }
+        _ => &mut qb,
+    };
     if let Some(cursor) = &query.cursor {
         let (value, id) = cursor
             .rsplit_once('|')
             .ok_or_else(|| bad("Invalid cursor"))?;
         let id = Uuid::parse_str(id).map_err(|_| bad("Invalid cursor"))?;
-        if sort == "newest" {
+        if sort == "featured" {
+            let values = value.split('~').collect::<Vec<_>>();
+            if values.len() != 3 {
+                return Err(bad("Invalid cursor"));
+            }
+            let featured = values[0]
+                .parse::<bool>()
+                .map_err(|_| bad("Invalid cursor"))?;
+            let verified = values[1]
+                .parse::<bool>()
+                .map_err(|_| bad("Invalid cursor"))?;
+            let date = chrono::DateTime::parse_from_rfc3339(values[2])
+                .map_err(|_| bad("Invalid cursor"))?
+                .with_timezone(&chrono::Utc);
+            qb.push(
+                " AND (COALESCE(p.featured_until>now(),false),p.is_verified,p.created_at,p.id)<(",
+            )
+            .push_bind(featured)
+            .push(",")
+            .push_bind(verified)
+            .push(",")
+            .push_bind(date)
+            .push(",")
+            .push_bind(id)
+            .push(")");
+        } else if sort == "newest" {
             let date = chrono::DateTime::parse_from_rfc3339(value)
                 .map_err(|_| bad("Invalid cursor"))?
                 .with_timezone(&chrono::Utc);
@@ -124,6 +165,9 @@ pub async fn search(pool: &PgPool, query: &Search) -> Result<Value, ApiError> {
     qb.push(match sort {
         "price_asc" => " ORDER BY p.price ASC,p.id ASC",
         "price_desc" => " ORDER BY p.price DESC,p.id DESC",
+        "featured" => {
+            " ORDER BY COALESCE(p.featured_until>now(),false) DESC,p.is_verified DESC,p.created_at DESC,p.id DESC"
+        }
         _ => " ORDER BY p.created_at DESC,p.id DESC",
     })
     .push(" LIMIT ")
@@ -135,7 +179,14 @@ pub async fn search(pool: &PgPool, query: &Search) -> Result<Value, ApiError> {
         data.last().map(|v| {
             format!(
                 "{}|{}",
-                if sort == "newest" {
+                if sort == "featured" {
+                    format!(
+                        "{}~{}~{}",
+                        v["is_featured"].as_bool().unwrap_or(false),
+                        v["is_verified"].as_bool().unwrap_or(false),
+                        v["created_at"].as_str().unwrap_or_default()
+                    )
+                } else if sort == "newest" {
                     v["created_at"].as_str().unwrap_or_default().to_string()
                 } else {
                     v["price"].to_string()
@@ -153,7 +204,7 @@ pub async fn detail(
     slug: String,
     owner: Option<&auth::User>,
 ) -> Result<Value, ApiError> {
-    let row:Value=sqlx::query_scalar("SELECT to_jsonb(p) || jsonb_build_object('city',c.name,'state',s.name,'area',a.name,'images',COALESCE((SELECT jsonb_agg(to_jsonb(i) ORDER BY i.position) FROM property_images i WHERE i.property_id=p.id),'[]'::jsonb),'amenity_ids',COALESCE((SELECT jsonb_agg(pa.amenity_id) FROM property_amenities pa WHERE pa.property_id=p.id),'[]'::jsonb),'amenities',COALESCE((SELECT jsonb_agg(am.name) FROM amenities am JOIN property_amenities pa ON pa.amenity_id=am.id WHERE pa.property_id=p.id),'[]'::jsonb),'agent',jsonb_build_object('id',u.id,'first_name',u.first_name,'last_name',u.last_name,'agency_name',ap.agency_name,'verification_status',ap.verification_status)) FROM properties p JOIN cities c ON c.id=p.city_id JOIN states s ON s.id=p.state_id LEFT JOIN areas a ON a.id=p.area_id JOIN users u ON u.id=p.agent_id LEFT JOIN agent_profiles ap ON ap.user_id=u.id WHERE p.slug=$1 AND (p.status='active' OR p.agent_id=$2 OR $3)").bind(slug).bind(owner.as_ref().map(|u|u.id)).bind(owner.as_ref().is_some_and(|u|u.role=="admin")).fetch_one(pool).await?;
+    let row:Value=sqlx::query_scalar("SELECT to_jsonb(p) || jsonb_build_object('city',c.name,'state',s.name,'area',a.name,'images',COALESCE((SELECT jsonb_agg(to_jsonb(i) ORDER BY i.position) FROM property_images i WHERE i.property_id=p.id),'[]'::jsonb),'videos',COALESCE((SELECT jsonb_agg(to_jsonb(v) ORDER BY v.position) FROM property_videos v WHERE v.property_id=p.id),'[]'::jsonb),'amenity_ids',COALESCE((SELECT jsonb_agg(pa.amenity_id) FROM property_amenities pa WHERE pa.property_id=p.id),'[]'::jsonb),'amenities',COALESCE((SELECT jsonb_agg(am.name) FROM amenities am JOIN property_amenities pa ON pa.amenity_id=am.id WHERE pa.property_id=p.id),'[]'::jsonb),'agent',jsonb_build_object('id',u.id,'first_name',u.first_name,'last_name',u.last_name,'phone',u.phone,'whatsapp',u.whatsapp,'telegram',u.telegram,'instagram',u.instagram,'agency_name',ap.agency_name,'verification_status',COALESCE(ap.verification_status,'pending'))) FROM properties p JOIN cities c ON c.id=p.city_id JOIN states s ON s.id=p.state_id LEFT JOIN areas a ON a.id=p.area_id JOIN users u ON u.id=p.agent_id LEFT JOIN agent_profiles ap ON ap.user_id=u.id WHERE p.slug=$1 AND (p.status='active' OR p.agent_id=$2 OR $3)").bind(slug).bind(owner.as_ref().map(|u|u.id)).bind(owner.as_ref().is_some_and(|u|u.role=="admin")).fetch_one(pool).await?;
     Ok(row)
 }
 pub async fn save(
@@ -162,12 +213,6 @@ pub async fn save(
     path: Option<Uuid>,
     body: &Listing,
 ) -> Result<Value, ApiError> {
-    if !["agent", "admin"].contains(&user.role.as_str()) {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "An agent account is required",
-        ));
-    }
     body.validate()?;
     let mut tx = pool.begin().await?;
     let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cities c WHERE c.id=$1 AND c.state_id=$2 AND ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM areas a WHERE a.id=$3 AND a.city_id=c.id)))").bind(body.city_id).bind(body.state_id).bind(body.area_id).fetch_one(&mut *tx).await?;
@@ -236,6 +281,49 @@ pub async fn save(
     } else {
         Vec::new()
     };
+    let mut prepared_videos = Vec::with_capacity(body.videos.len());
+    for video in &body.videos {
+        match video {
+            ListingVideo::External(url) => {
+                let kind = if url.contains("youtube.com/") || url.contains("youtu.be/") {
+                    "youtube"
+                } else {
+                    "external"
+                };
+                prepared_videos.push((url.clone(), kind, None, None));
+            }
+            ListingVideo::Managed { upload_id, url } => {
+                let upload: Option<(String, String)> = sqlx::query_as(
+                    "SELECT public_id,secure_url FROM image_uploads WHERE id=$1 AND secure_url=$2 AND resource_type='video' AND ((user_id=$3 AND status='uploaded') OR (property_id=$4 AND status='attached'))",
+                )
+                .bind(upload_id)
+                .bind(url)
+                .bind(user.id)
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                let (public_id, secure_url) = upload.ok_or_else(|| {
+                    bad("An uploaded video is unavailable or belongs to another account")
+                })?;
+                prepared_videos.push((secure_url, "upload", Some(public_id), Some(*upload_id)));
+            }
+        }
+    }
+    let selected_video_upload_ids = prepared_videos
+        .iter()
+        .filter_map(|(_, _, _, upload_id)| *upload_id)
+        .collect::<Vec<_>>();
+    let removed_video_uploads: Vec<(Uuid, String)> = if path.is_some() {
+        sqlx::query_as(
+            "SELECT upload_id,public_id FROM property_videos WHERE property_id=$1 AND upload_id IS NOT NULL AND NOT (upload_id=ANY($2))",
+        )
+        .bind(id)
+        .bind(&selected_video_upload_ids)
+        .fetch_all(&mut *tx)
+        .await?
+    } else {
+        Vec::new()
+    };
     let slug = format!(
         "{}-{}",
         body.title
@@ -263,7 +351,29 @@ pub async fn save(
                 .await?;
         }
     }
+    sqlx::query("DELETE FROM property_videos WHERE property_id=$1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    for (index, (url, kind, public_id, upload_id)) in prepared_videos.iter().enumerate() {
+        sqlx::query("INSERT INTO property_videos(id,property_id,url,kind,public_id,upload_id,position) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(Uuid::new_v4()).bind(id).bind(url).bind(kind).bind(public_id).bind(upload_id).bind(index as i16).execute(&mut *tx).await?;
+        if let Some(upload_id) = upload_id {
+            sqlx::query("UPDATE image_uploads SET property_id=$1,status='attached',attached_at=COALESCE(attached_at,now()) WHERE id=$2")
+                .bind(id)
+                .bind(upload_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
     for (upload_id, _) in &removed_uploads {
+        sqlx::query(
+            "UPDATE image_uploads SET property_id=NULL,status='pending_delete' WHERE id=$1",
+        )
+        .bind(upload_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    for (upload_id, _) in &removed_video_uploads {
         sqlx::query(
             "UPDATE image_uploads SET property_id=NULL,status='pending_delete' WHERE id=$1",
         )
@@ -284,7 +394,7 @@ pub async fn save(
     }
     tx.commit().await?;
     for (upload_id, public_id) in removed_uploads {
-        match crate::images::delete_asset(&public_id).await {
+        match crate::images::delete_asset(&public_id, "image").await {
             Ok(()) => {
                 if let Err(error) =
                     sqlx::query("UPDATE image_uploads SET status='deleted' WHERE id=$1")
@@ -297,6 +407,23 @@ pub async fn save(
             }
             Err(error) => {
                 tracing::warn!(%error, %upload_id, "Removed photo remains queued for cleanup");
+            }
+        }
+    }
+    for (upload_id, public_id) in removed_video_uploads {
+        match crate::images::delete_asset(&public_id, "video").await {
+            Ok(()) => {
+                if let Err(error) =
+                    sqlx::query("UPDATE image_uploads SET status='deleted' WHERE id=$1")
+                        .bind(upload_id)
+                        .execute(pool)
+                        .await
+                {
+                    tracing::warn!(%error, %upload_id, "Video was removed from Cloudinary but its cleanup record was not updated");
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, %upload_id, "Removed video remains queued for cleanup")
             }
         }
     }
