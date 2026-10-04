@@ -19,6 +19,47 @@ use actix_web::{
     web,
 };
 use sqlx::postgres::PgPoolOptions;
+
+fn parse_web_origins(configured: &str) -> Vec<String> {
+    let origins: Vec<_> = configured
+        .split(',')
+        .map(str::trim)
+        .filter(|origin| !origin.is_empty())
+        .map(str::to_owned)
+        .collect();
+
+    if origins.is_empty() {
+        vec!["http://localhost:5173".into()]
+    } else {
+        origins
+    }
+}
+
+fn web_origins() -> Vec<String> {
+    let configured = std::env::var("WEB_ORIGINS")
+        .or_else(|_| std::env::var("WEB_ORIGIN"))
+        .unwrap_or_else(|_| "http://localhost:5173".into());
+    parse_web_origins(&configured)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_web_origins;
+
+    #[test]
+    fn parses_and_trims_an_origin_allowlist() {
+        assert_eq!(
+            parse_web_origins(" http://localhost:5173, http://127.0.0.1:5173 "),
+            ["http://localhost:5173", "http://127.0.0.1:5173"]
+        );
+    }
+
+    #[test]
+    fn falls_back_when_the_allowlist_is_empty() {
+        assert_eq!(parse_web_origins(" , "), ["http://localhost:5173"]);
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
@@ -37,14 +78,15 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Database migrations failed");
     auth::spawn_session_cleanup(pool.clone());
-    let origin = std::env::var("WEB_ORIGIN").unwrap_or_else(|_| "http://localhost:5173".into());
+    let origins = web_origins();
     let bind = std::env::var("API_BIND").unwrap_or_else(|_| "127.0.0.1:8080".into());
     tracing::info!(%bind,"NOMA API starting");
     let limiter = web::Data::new(security::RateLimiter::default());
     let email = web::Data::new(email::EmailClient::from_env());
     let google = web::Data::new(google_auth::GoogleVerifier::from_env());
     HttpServer::new(move || {
-        let allowed = origin.clone();
+        let cors_origins = origins.clone();
+        let allowed_origins = origins.clone();
         let limits = limiter.clone();
         App::new()
             .app_data(web::Data::new(pool.clone()))
@@ -92,7 +134,11 @@ async fn main() -> std::io::Result<()> {
             )
             .wrap(
                 actix_cors::Cors::default()
-                    .allowed_origin(&origin)
+                    .allowed_origin_fn(move |value, _| {
+                        value
+                            .to_str()
+                            .is_ok_and(|origin| cors_origins.iter().any(|item| item == origin))
+                    })
                     .allowed_methods(vec!["GET", "POST", "PUT", "PATCH", "DELETE"])
                     .allowed_headers(vec!["Content-Type"])
                     .supports_credentials(),
@@ -109,7 +155,7 @@ async fn main() -> std::io::Result<()> {
                         .headers()
                         .get("origin")
                         .and_then(|v| v.to_str().ok())
-                        .is_some_and(|v| v == allowed);
+                        .is_some_and(|origin| allowed_origins.iter().any(|item| item == origin));
                 let throttled = !safe
                     && req.peer_addr().is_some_and(|peer| {
                         !limits.allow(peer.ip(), req.path().starts_with("/api/v1/auth/"))

@@ -31,7 +31,7 @@ export default defineConfig({
         GOOGLE_CLIENT_ID: "",
         RESEND_API_KEY: "",
         API_BIND: "127.0.0.1:8081",
-        WEB_ORIGIN: "http://localhost:5174",
+        WEB_ORIGINS: "http://localhost:5174,http://127.0.0.1:5174",
         COOKIE_SECURE: "false",
         RUST_LOG: "warn",
       },

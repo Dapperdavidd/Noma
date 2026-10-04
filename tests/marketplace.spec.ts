@@ -466,6 +466,18 @@ test("stable keyset pagination across equal prices and dates", async () => {
 });
 test("invalid location hierarchy, privilege escalation and cross-origin mutations are rejected", async () => {
   const owner = await account();
+  const loopbackAlias = await request.newContext({
+    baseURL,
+    extraHTTPHeaders: { Origin: "http://127.0.0.1:5174" },
+  });
+  expect(
+    (
+      await loopbackAlias.post(`${baseURL}/auth/login`, {
+        data: { email: "missing@example.test", password: "not-a-password" },
+      })
+    ).status(),
+  ).toBe(401);
+  await loopbackAlias.dispose();
   const locations = await (
     await owner.client.get(`${baseURL}/locations`)
   ).json();

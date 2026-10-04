@@ -55,7 +55,7 @@ Set `GOOGLE_CLIENT_ID` to a Google Identity Services web client ID. The API publ
 
 `Dockerfile` contains separate `api` and `web` targets. The web image serves the compiled React application through unprivileged Nginx, routes `/api` to the Rust service, and falls back to `index.html` for browser routes. The API image runs as an unprivileged user and reports database-aware health through `/ready`.
 
-For a single-host deployment, set `DATABASE_URL`, `WEB_ORIGIN` (the exact public HTTPS origin), and the Cloudinary variables in a private environment file, then run `docker compose -f compose.production.yaml up --build -d`. The production compose file intentionally does not create a database; use a backed-up managed PostgreSQL service or a separately operated database. No provider account is required to build or run the images locally.
+For a single-host deployment, set `DATABASE_URL`, `WEB_ORIGINS` (a comma-separated allowlist containing the exact public HTTPS origin), and the Cloudinary variables in a private environment file, then run `docker compose -f compose.production.yaml up --build -d`. `WEB_ORIGIN` remains supported for a single origin. The production compose file intentionally does not create a database; use a backed-up managed PostgreSQL service or a separately operated database. No provider account is required to build or run the images locally.
 
 ## Image uploads
 
