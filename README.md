@@ -41,11 +41,15 @@ TEST_DATABASE_URL=postgres://noma:noma@localhost:5432/noma_test npm test
 
 ## Working flows
 
-Account registration and sign-in; personal detail updates and secure password rotation; property seeker and agent roles; server-side ownership checks; draft creation and editing; publish/archive/status management; full-text search; normalized state/city/area filters; budget, bedroom and multi-amenity filters; price sorting with stable cursor pagination; property details and galleries; saved properties; inquiries and an agent dashboard. Signed-in buyers can report suspicious listings, and administrators resolve those reports through an auditable review queue. Images accept externally hosted HTTPS URLs and signed direct Cloudinary uploads when configured. Managed uploads are confirmed server-side, tied to their owner and listing, and cleaned up when discarded or removed. No image binaries are stored in PostgreSQL.
+Account registration and sign-in; Google identity linking; email verification and single-use password recovery; personal detail updates and secure password rotation; property seeker and agent roles; server-side ownership checks; draft creation and editing; publish/archive/status management; full-text search; normalized state/city/area filters; budget, bedroom and multi-amenity filters; price sorting with stable cursor pagination; property details and galleries; saved properties; inquiries and an agent dashboard. Signed-in buyers can report suspicious listings, and administrators resolve those reports through an auditable review queue. Images accept externally hosted HTTPS URLs and signed direct Cloudinary uploads when configured. Managed uploads are confirmed server-side, tied to their owner and listing, and cleaned up when discarded or removed. No image binaries are stored in PostgreSQL.
 
 ## Before public launch
 
-Connect Cloudinary credentials and a signed upload preset, a production database and hosting, transactional email for verification/recovery, and a reviewed location catalog. Configure HTTPS and `COOKIE_SECURE=true`. Add production monitoring, backups/restore verification, an edge abuse-control policy, legal documents and operational verification procedures. No payment or automated verification claims are made.
+Connect a production database and hosting, verify a transactional-email sending domain, configure the production Google origin, and review the location catalog. Configure HTTPS and `COOKIE_SECURE=true`. Add production monitoring, backups/restore verification, an edge abuse-control policy, legal documents and operational verification procedures. No payment or automated verification claims are made.
+
+## Account providers
+
+Set `GOOGLE_CLIENT_ID` to a Google Identity Services web client ID. The API publishes that public ID to the frontend at runtime and verifies Google ID-token signatures against Google's rotating JWKS; no Google client secret is used. Configure `RESEND_API_KEY`, `EMAIL_FROM`, and `PUBLIC_APP_URL` for verification and password-recovery links. Password-reset requests always return the same response, tokens are stored only as SHA-256 hashes, links expire and are single-use, and successful resets revoke every active session.
 
 ## Production container
 

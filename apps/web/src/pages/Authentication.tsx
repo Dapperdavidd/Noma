@@ -1,10 +1,11 @@
-import { useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { api, type User } from "../api";
 import { hero } from "../demo";
 import { Header, Notice } from "../components";
 import { useAuth } from "../auth";
+import { GoogleButton } from "../GoogleButton";
 
 export function Authentication() {
   const [params] = useSearchParams();
@@ -13,6 +14,15 @@ export function Authentication() {
   const navigate = useNavigate();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const role = params.get("role") === "agent" ? "agent" : "user";
+  const signedIn = useCallback(
+    async (user: User) => {
+      await refresh();
+      navigate(user.role === "agent" ? "/dashboard" : "/properties");
+    },
+    [navigate, refresh],
+  );
+  const googleError = useCallback((message: string) => setError(message), []);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -22,8 +32,7 @@ export function Authentication() {
         method: "POST",
         body: JSON.stringify(Object.fromEntries(new FormData(e.currentTarget))),
       });
-      await refresh();
-      navigate(user.role === "agent" ? "/dashboard" : "/properties");
+      await signedIn(user);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -98,12 +107,7 @@ export function Authentication() {
             {isJoin && (
               <label>
                 I’m here to
-                <select
-                  name="role"
-                  defaultValue={
-                    params.get("role") === "agent" ? "agent" : "user"
-                  }
-                >
+                <select name="role" defaultValue={role}>
                   <option value="user">Find a home</option>
                   <option value="agent">List and manage properties</option>
                 </select>
@@ -115,6 +119,16 @@ export function Authentication() {
               <ArrowRight size={18} />
             </button>
           </form>
+          <GoogleButton
+            role={role}
+            onSignedIn={signedIn}
+            onError={googleError}
+          />
+          {!isJoin && (
+            <p className="auth-switch">
+              <Link to="/forgot-password">Forgot your password?</Link>
+            </p>
+          )}
           <p className="auth-switch">
             {isJoin ? "Already have an account?" : "New to NOMA?"}{" "}
             <Link to={isJoin ? "/login" : "/join"}>

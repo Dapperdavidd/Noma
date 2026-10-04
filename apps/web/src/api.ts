@@ -5,6 +5,8 @@ export type User = {
   last_name: string;
   phone: string | null;
   role: "user" | "agent" | "admin";
+  is_verified: boolean;
+  has_password: boolean;
 };
 export type Property = {
   id: string;

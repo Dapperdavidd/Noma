@@ -1,7 +1,12 @@
-use crate::error::{ApiError, bad, unauthorized};
+use crate::{
+    email::EmailClient,
+    error::{ApiError, bad, unauthorized},
+    google_auth::{GoogleClaims, GoogleVerifier},
+};
 use actix_web::{
     HttpRequest, HttpResponse,
     cookie::{Cookie, SameSite, time::Duration},
+    http::StatusCode,
     web,
 };
 use argon2::{
@@ -10,7 +15,7 @@ use argon2::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 const SESSION_CLEANUP_BATCH: u64 = 1_000;
@@ -23,6 +28,8 @@ pub struct User {
     pub last_name: String,
     pub phone: Option<String>,
     pub role: String,
+    pub is_verified: bool,
+    pub has_password: bool,
 }
 #[derive(Deserialize)]
 pub struct Credentials {
@@ -34,6 +41,42 @@ pub struct Credentials {
 }
 fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
+}
+
+fn random_token() -> String {
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    hex::encode(bytes)
+}
+
+async fn create_auth_token(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    purpose: &str,
+    lifetime: &str,
+) -> Result<String, ApiError> {
+    let token = random_token();
+    sqlx::query(
+        "UPDATE auth_tokens SET used_at=now() WHERE user_id=$1 AND purpose=$2 AND used_at IS NULL",
+    )
+    .bind(user_id)
+    .bind(purpose)
+    .execute(&mut **tx)
+    .await?;
+    // Lifetime is selected internally and never accepts request input.
+    let interval = match lifetime {
+        "24 hours" => "24 hours",
+        _ => "1 hour",
+    };
+    sqlx::query("INSERT INTO auth_tokens(token_hash,user_id,purpose,expires_at) VALUES($1,$2,$3,now()+$4::interval)")
+        .bind(hash_token(&token))
+        .bind(user_id)
+        .bind(purpose)
+        .bind(interval)
+        .execute(&mut **tx)
+        .await?;
+    Ok(token)
 }
 
 async fn password_hash(password: String) -> Result<String, ApiError> {
@@ -75,6 +118,11 @@ async fn cleanup_expired_sessions(pool: &PgPool) -> Result<u64, sqlx::Error> {
             break;
         }
     }
+    sqlx::query(
+        "DELETE FROM auth_tokens WHERE expires_at<=now() OR used_at<now()-interval '7 days'",
+    )
+    .execute(pool)
+    .await?;
     Ok(deleted)
 }
 
@@ -96,7 +144,7 @@ pub fn spawn_session_cleanup(pool: PgPool) {
 
 pub async fn current(req: &HttpRequest, pool: &PgPool) -> Result<User, ApiError> {
     let token = req.cookie("noma_session").ok_or_else(unauthorized)?;
-    let user=sqlx::query_as::<_,User>("SELECT u.id,u.email,u.first_name,u.last_name,u.phone,u.role FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=$1 AND s.expires_at>now() AND u.is_active").bind(hash_token(token.value())).fetch_optional(pool).await?.ok_or_else(unauthorized)?;
+    let user=sqlx::query_as::<_,User>("SELECT u.id,u.email,u.first_name,u.last_name,u.phone,u.role,u.is_verified,(u.password_hash IS NOT NULL) AS has_password FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=$1 AND s.expires_at>now() AND u.is_active").bind(hash_token(token.value())).fetch_optional(pool).await?.ok_or_else(unauthorized)?;
     Ok(user)
 }
 
@@ -110,10 +158,7 @@ fn session_cookie(token: String) -> Cookie<'static> {
         .finish()
 }
 async fn sign_in(pool: &PgPool, user: User) -> Result<HttpResponse, ApiError> {
-    use rand::RngCore;
-    let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
-    let token = hex::encode(bytes);
+    let token = random_token();
     sqlx::query(
         "INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+interval '7 days')",
     )
@@ -125,6 +170,7 @@ async fn sign_in(pool: &PgPool, user: User) -> Result<HttpResponse, ApiError> {
 }
 pub async fn register(
     pool: web::Data<PgPool>,
+    email_client: web::Data<EmailClient>,
     body: web::Json<Credentials>,
 ) -> Result<HttpResponse, ApiError> {
     let email = body.email.trim().to_lowercase();
@@ -149,7 +195,7 @@ pub async fn register(
     let hash = password_hash(body.password.clone()).await?;
     let mut tx = pool.begin().await?;
     let id = Uuid::new_v4();
-    let user=sqlx::query_as::<_,User>("INSERT INTO users(id,email,password_hash,first_name,last_name,role) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,email,first_name,last_name,phone,role").bind(id).bind(email).bind(hash).bind(first).bind(last).bind(role).fetch_one(&mut *tx).await?;
+    let user=sqlx::query_as::<_,User>("INSERT INTO users(id,email,password_hash,first_name,last_name,role) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,email,first_name,last_name,phone,role,is_verified,true AS has_password").bind(id).bind(email).bind(hash).bind(first).bind(last).bind(role).fetch_one(&mut *tx).await?;
     if role == "agent" {
         sqlx::query("INSERT INTO agent_profiles(id,user_id) VALUES($1,$2)")
             .bind(Uuid::new_v4())
@@ -157,7 +203,11 @@ pub async fn register(
             .execute(&mut *tx)
             .await?;
     }
+    let verification = create_auth_token(&mut tx, id, "verify_email", "24 hours").await?;
     tx.commit().await?;
+    if let Err(error) = email_client.verification(&user.email, &verification).await {
+        tracing::warn!(%error, user_id=%user.id, "Verification email delivery failed");
+    }
     sign_in(&pool, user).await
 }
 pub async fn login(
@@ -167,19 +217,22 @@ pub async fn login(
     if body.password.len() > 128 {
         return Err(unauthorized());
     }
-    let row = sqlx::query_as::<_, (Uuid, String)>(
+    let row = sqlx::query_as::<_, (Uuid, Option<String>)>(
         "SELECT id,password_hash FROM users WHERE email=$1 AND is_active",
     )
     .bind(body.email.trim().to_lowercase())
     .fetch_optional(pool.get_ref())
     .await?
     .ok_or_else(unauthorized)?;
-    let valid = password_valid(row.1, body.password.clone()).await?;
+    let valid = match row.1 {
+        Some(hash) => password_valid(hash, body.password.clone()).await?,
+        None => false,
+    };
     if !valid {
         return Err(unauthorized());
     }
     let user = sqlx::query_as::<_, User>(
-        "SELECT id,email,first_name,last_name,phone,role FROM users WHERE id=$1",
+        "SELECT id,email,first_name,last_name,phone,role,is_verified,(password_hash IS NOT NULL) AS has_password FROM users WHERE id=$1",
     )
     .bind(row.0)
     .fetch_one(pool.get_ref())
@@ -230,7 +283,7 @@ pub async fn update_profile(
         }
     }
     let updated = sqlx::query_as::<_, User>(
-        "UPDATE users SET first_name=$1,last_name=$2,phone=$3,updated_at=now() WHERE id=$4 RETURNING id,email,first_name,last_name,phone,role",
+        "UPDATE users SET first_name=$1,last_name=$2,phone=$3,updated_at=now() WHERE id=$4 RETURNING id,email,first_name,last_name,phone,role,is_verified,(password_hash IS NOT NULL) AS has_password",
     )
     .bind(first)
     .bind(last)
@@ -259,13 +312,16 @@ pub async fn change_password(
     if body.current_password == body.new_password {
         return Err(bad("Choose a password you have not already used"));
     }
-    let existing: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id=$1")
-        .bind(user.id)
-        .fetch_one(pool.get_ref())
-        .await?;
-    if !password_valid(existing, body.current_password.clone()).await? {
+    let existing: Option<String> =
+        sqlx::query_scalar("SELECT password_hash FROM users WHERE id=$1")
+            .bind(user.id)
+            .fetch_one(pool.get_ref())
+            .await?;
+    if let Some(hash) = existing
+        && !password_valid(hash, body.current_password.clone()).await?
+    {
         return Err(ApiError(
-            actix_web::http::StatusCode::UNAUTHORIZED,
+            StatusCode::UNAUTHORIZED,
             "Current password is incorrect",
         ));
     }
@@ -285,6 +341,240 @@ pub async fn change_password(
     cookie.make_removal();
     Ok(HttpResponse::NoContent().cookie(cookie).finish())
 }
+
+#[derive(Deserialize)]
+pub struct GoogleCredential {
+    credential: String,
+    role: Option<String>,
+}
+
+fn names(claims: &GoogleClaims) -> (String, String) {
+    let first = claims.given_name.trim();
+    let last = claims.family_name.trim();
+    if !first.is_empty() {
+        return (
+            first.chars().take(100).collect(),
+            last.chars().take(100).collect(),
+        );
+    }
+    let mut parts = claims.name.split_whitespace();
+    let fallback = claims.email.split('@').next().unwrap_or("NOMA user");
+    let first = parts.next().unwrap_or(fallback).chars().take(100).collect();
+    let last = parts
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(100)
+        .collect();
+    (first, last)
+}
+
+pub async fn google_sign_in(
+    pool: web::Data<PgPool>,
+    verifier: web::Data<GoogleVerifier>,
+    body: web::Json<GoogleCredential>,
+) -> Result<HttpResponse, ApiError> {
+    let claims = verifier.verify(&body.credential).await?;
+    let role = body.role.as_deref().unwrap_or("user");
+    if !["user", "agent"].contains(&role) {
+        return Err(bad("Invalid account role"));
+    }
+    let email = claims.email.trim().to_lowercase();
+    let mut tx = pool.begin().await?;
+    let existing_identity = sqlx::query_as::<_, User>(
+        "SELECT u.id,u.email,u.first_name,u.last_name,u.phone,u.role,u.is_verified,(u.password_hash IS NOT NULL) AS has_password FROM users u JOIN user_identities i ON i.user_id=u.id WHERE i.provider='google' AND i.subject=$1 AND u.is_active",
+    )
+    .bind(&claims.sub)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let user = if let Some(user) = existing_identity {
+        user
+    } else if let Some(user) = sqlx::query_as::<_, User>(
+        "UPDATE users SET is_verified=true,updated_at=now() WHERE email=$1 AND is_active RETURNING id,email,first_name,last_name,phone,role,is_verified,(password_hash IS NOT NULL) AS has_password",
+    )
+    .bind(&email)
+    .fetch_optional(&mut *tx)
+    .await?
+    {
+        let linked = sqlx::query_scalar::<_, String>(
+            "SELECT subject FROM user_identities WHERE user_id=$1 AND provider='google'",
+        )
+        .bind(user.id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        match linked {
+            Some(subject) if subject != claims.sub => {
+                return Err(bad("This email is linked to a different Google account"));
+            }
+            Some(_) => {}
+            None => {
+                sqlx::query("INSERT INTO user_identities(id,user_id,provider,subject) VALUES($1,$2,'google',$3)")
+                    .bind(Uuid::new_v4())
+                    .bind(user.id)
+                    .bind(&claims.sub)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+        }
+        user
+    } else {
+        let id = Uuid::new_v4();
+        let (first, last) = names(&claims);
+        let user = sqlx::query_as::<_, User>(
+            "INSERT INTO users(id,email,password_hash,first_name,last_name,role,is_verified) VALUES($1,$2,NULL,$3,$4,$5,true) RETURNING id,email,first_name,last_name,phone,role,is_verified,false AS has_password",
+        )
+        .bind(id)
+        .bind(&email)
+        .bind(first)
+        .bind(last)
+        .bind(role)
+        .fetch_one(&mut *tx)
+        .await?;
+        sqlx::query("INSERT INTO user_identities(id,user_id,provider,subject) VALUES($1,$2,'google',$3)")
+            .bind(Uuid::new_v4())
+            .bind(id)
+            .bind(&claims.sub)
+            .execute(&mut *tx)
+            .await?;
+        if role == "agent" {
+            sqlx::query("INSERT INTO agent_profiles(id,user_id) VALUES($1,$2)")
+                .bind(Uuid::new_v4())
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+        }
+        user
+    };
+    tx.commit().await?;
+    sign_in(&pool, user).await
+}
+
+#[derive(Serialize)]
+struct Providers<'a> {
+    google_client_id: Option<&'a str>,
+    email: bool,
+}
+
+pub async fn providers(
+    verifier: web::Data<GoogleVerifier>,
+    email: web::Data<EmailClient>,
+) -> HttpResponse {
+    HttpResponse::Ok().json(Providers {
+        google_client_id: verifier.client_id(),
+        email: email.configured(),
+    })
+}
+
+#[derive(Deserialize)]
+pub struct EmailRequest {
+    email: String,
+}
+
+pub async fn request_password_reset(
+    pool: web::Data<PgPool>,
+    email_client: web::Data<EmailClient>,
+    body: web::Json<EmailRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let email = body.email.trim().to_lowercase();
+    if email.len() <= 254
+        && email.contains('@')
+        && let Some(id) = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM users WHERE email=$1 AND is_active AND password_hash IS NOT NULL",
+        )
+        .bind(&email)
+        .fetch_optional(pool.get_ref())
+        .await?
+    {
+        let mut tx = pool.begin().await?;
+        let token = create_auth_token(&mut tx, id, "reset_password", "1 hour").await?;
+        tx.commit().await?;
+        if let Err(error) = email_client.password_reset(&email, &token).await {
+            tracing::warn!(%error, user_id=%id, "Password reset email delivery failed");
+        }
+    }
+    Ok(HttpResponse::NoContent().finish())
+}
+
+#[derive(Deserialize)]
+pub struct TokenBody {
+    token: String,
+}
+
+pub async fn verify_email(
+    pool: web::Data<PgPool>,
+    body: web::Json<TokenBody>,
+) -> Result<HttpResponse, ApiError> {
+    let mut tx = pool.begin().await?;
+    let user_id = sqlx::query_scalar::<_, Uuid>(
+        "UPDATE auth_tokens SET used_at=now() WHERE token_hash=$1 AND purpose='verify_email' AND used_at IS NULL AND expires_at>now() RETURNING user_id",
+    )
+    .bind(hash_token(&body.token))
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| bad("This verification link is invalid or has expired"))?;
+    sqlx::query("UPDATE users SET is_verified=true,updated_at=now() WHERE id=$1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(HttpResponse::NoContent().finish())
+}
+
+pub async fn resend_verification(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    email_client: web::Data<EmailClient>,
+) -> Result<HttpResponse, ApiError> {
+    let user = current(&req, &pool).await?;
+    if !user.is_verified {
+        let mut tx = pool.begin().await?;
+        let token = create_auth_token(&mut tx, user.id, "verify_email", "24 hours").await?;
+        tx.commit().await?;
+        if let Err(error) = email_client.verification(&user.email, &token).await {
+            tracing::warn!(%error, user_id=%user.id, "Verification email delivery failed");
+            return Err(ApiError(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "We could not send the verification email. Please try again shortly.",
+            ));
+        }
+    }
+    Ok(HttpResponse::NoContent().finish())
+}
+
+#[derive(Deserialize)]
+pub struct PasswordReset {
+    token: String,
+    new_password: String,
+}
+
+pub async fn reset_password(
+    pool: web::Data<PgPool>,
+    body: web::Json<PasswordReset>,
+) -> Result<HttpResponse, ApiError> {
+    if !(12..=128).contains(&body.new_password.len()) {
+        return Err(bad("Password must contain 12–128 characters"));
+    }
+    let replacement = password_hash(body.new_password.clone()).await?;
+    let mut tx = pool.begin().await?;
+    let user_id = sqlx::query_scalar::<_, Uuid>(
+        "UPDATE auth_tokens SET used_at=now() WHERE token_hash=$1 AND purpose='reset_password' AND used_at IS NULL AND expires_at>now() RETURNING user_id",
+    )
+    .bind(hash_token(&body.token))
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| bad("This password reset link is invalid or has expired"))?;
+    sqlx::query("UPDATE users SET password_hash=$1,is_verified=true,updated_at=now() WHERE id=$2")
+        .bind(replacement)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM sessions WHERE user_id=$1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(HttpResponse::NoContent().finish())
+}
 pub async fn logout(req: HttpRequest, pool: web::Data<PgPool>) -> Result<HttpResponse, ApiError> {
     if let Some(cookie) = req.cookie("noma_session") {
         sqlx::query("DELETE FROM sessions WHERE token_hash=$1")
@@ -297,8 +587,20 @@ pub async fn logout(req: HttpRequest, pool: web::Data<PgPool>) -> Result<HttpRes
     Ok(HttpResponse::NoContent().cookie(cookie).finish())
 }
 pub fn routes(cfg: &mut web::ServiceConfig) {
-    cfg.route("/auth/register", web::post().to(register))
+    cfg.route("/auth/providers", web::get().to(providers))
+        .route("/auth/register", web::post().to(register))
         .route("/auth/login", web::post().to(login))
+        .route("/auth/google", web::post().to(google_sign_in))
+        .route("/auth/verify-email", web::post().to(verify_email))
+        .route(
+            "/auth/verify-email/resend",
+            web::post().to(resend_verification),
+        )
+        .route(
+            "/auth/password/forgot",
+            web::post().to(request_password_reset),
+        )
+        .route("/auth/password/reset", web::post().to(reset_password))
         .route("/auth/me", web::get().to(me))
         .route("/auth/logout", web::post().to(logout))
         .route("/account/profile", web::put().to(update_profile))

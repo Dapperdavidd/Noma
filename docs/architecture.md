@@ -26,7 +26,11 @@ Cursors use `(created_at, id)` or `(price, id)` with matching sort direction, so
 
 Passwords are hashed with Argon2id off the async worker. Random 256-bit opaque session tokens are sent only in HttpOnly, SameSite=Strict cookies; only SHA-256 token hashes are stored. Sessions expire in seven days and logout revokes the server record. Secure cookies default on; explicitly disable only for local HTTP development.
 
-Users can update their names and optional phone number without changing account identity. Password changes require the current password, hash the replacement off the async worker, and revoke every session for that user in the same database transaction. Email changes remain disabled until email ownership verification is connected.
+Users can update their names and optional phone number without changing account identity. Password changes require the current password when one exists, hash the replacement off the async worker, and revoke every session for that user in the same database transaction. Email changes remain disabled until identity relinking and address-change auditing are implemented.
+
+Google identities are stored separately from users and link only after Google supplies a verified email claim. The API validates token signature, issuer, audience and expiry against Google's rotating signing keys. Google-created accounts may add a local password later without fabricating a placeholder credential.
+
+Email verification and password recovery use random 256-bit, single-use tokens; PostgreSQL stores only SHA-256 hashes. Issuing a new token invalidates earlier unused tokens for that purpose. Password reset responses do not reveal whether an address exists, and a successful reset verifies the address and revokes every session. Provider delivery happens after the account transaction commits, so a temporary email outage cannot leave a partially created account.
 
 Cookie-authenticated mutations require an exact configured Origin. CORS only permits the configured frontend origin with credentials. Request bodies are capped. Database failures are logged internally and return safe messages. Never trust client-provided user IDs, role escalation, forwarded IP headers or verification fields.
 
@@ -36,7 +40,7 @@ The production image split keeps the public Nginx process and private API proces
 
 ## Operational gaps
 
-This is the initial product foundation. Signed Cloudinary uploads are implemented and live-provider verified. Email verification and password recovery are deferred with Google authentication. The initial audited moderation queue is implemented. Agent properties, inquiries and saved homes use stable cursor pagination, with separate aggregate counts for the agent dashboard. Expired sessions are removed hourly in bounded batches. Every state and the FCT have a primary market; detailed city and area coverage remains curated. External log retention, metrics and alert routing require production-provider configuration. Property view analytics are intentionally deferred until privacy and retention requirements are defined.
+This is the initial product foundation. Signed Cloudinary uploads are implemented and live-provider verified. Google authentication and Resend-backed verification/recovery are implemented; live Google testing still requires the configured client ID, and public email delivery requires a verified sending domain. The audited moderation queues are implemented. Agent properties, inquiries and saved homes use stable cursor pagination, with separate aggregate counts for the agent dashboard. Expired sessions and authentication tokens are removed hourly. Every state and the FCT have a primary market; detailed city and area coverage remains curated. External log retention, metrics and alert routing require production-provider configuration. Property view analytics are intentionally deferred until privacy and retention requirements are defined.
 
 ## Module boundaries
 

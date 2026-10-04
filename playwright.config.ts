@@ -28,6 +28,8 @@ export default defineConfig({
         CLOUDINARY_API_KEY: "",
         CLOUDINARY_API_SECRET: "",
         CLOUDINARY_UPLOAD_PRESET: "",
+        GOOGLE_CLIENT_ID: "",
+        RESEND_API_KEY: "",
         API_BIND: "127.0.0.1:8081",
         WEB_ORIGIN: "http://localhost:5174",
         COOKIE_SECURE: "false",

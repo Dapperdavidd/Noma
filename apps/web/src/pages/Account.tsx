@@ -9,6 +9,7 @@ export function Account() {
   const { user, refresh } = useAuth();
   const navigate = useNavigate();
   const [profileSaved, setProfileSaved] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<"profile" | "password" | null>(null);
 
@@ -48,6 +49,19 @@ export function Account() {
     }
   }
 
+  async function resendVerification() {
+    setBusy("profile");
+    setError("");
+    try {
+      await api("/auth/verify-email/resend", { method: "POST" });
+      setVerificationSent(true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (!user) return null;
   return (
     <>
@@ -65,6 +79,14 @@ export function Account() {
       </div>
       {error && <Notice>{error}</Notice>}
       {profileSaved && <Notice>Your account details have been updated.</Notice>}
+      {!user.is_verified && (
+        <Notice>
+          Verify your email to secure account recovery.{" "}
+          <button className="inline-action" onClick={resendVerification}>
+            {verificationSent ? "Verification sent" : "Send a new link"}
+          </button>
+        </Notice>
+      )}
       <div className="account-grid">
         <section>
           <UserRound size={24} />
@@ -110,21 +132,26 @@ export function Account() {
         </section>
         <section>
           <LockKeyhole size={24} />
-          <h2>Change password</h2>
+          <h2>{user.has_password ? "Change password" : "Add a password"}</h2>
           <p className="muted">
             For your security, changing your password signs out every device.
           </p>
           <form onSubmit={changePassword}>
-            <label>
-              Current password
-              <input
-                name="current_password"
-                type="password"
-                required
-                maxLength={128}
-                autoComplete="current-password"
-              />
-            </label>
+            {user.has_password && (
+              <label>
+                Current password
+                <input
+                  name="current_password"
+                  type="password"
+                  required
+                  maxLength={128}
+                  autoComplete="current-password"
+                />
+              </label>
+            )}
+            {!user.has_password && (
+              <input type="hidden" name="current_password" value="" />
+            )}
             <label>
               New password
               <input

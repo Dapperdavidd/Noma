@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   test,
   expect,
@@ -53,6 +54,124 @@ async function create(client: APIRequestContext, title: string) {
   expect(response.status(), await response.text()).toBe(200);
   return response.json();
 }
+
+function databaseCommand(statement: string) {
+  return execFileSync("psql", [database, "-Atc", statement], {
+    encoding: "utf8",
+  }).trim();
+}
+
+test("email verification and password recovery tokens are single-use", async () => {
+  const member = await account("user");
+  expect(member.user.is_verified).toBe(false);
+  expect(member.user.has_password).toBe(true);
+
+  const providers = await member.client.get(`${baseURL}/auth/providers`);
+  expect(await providers.json()).toEqual({
+    google_client_id: null,
+    email: false,
+  });
+  expect(
+    (
+      await member.client.post(`${baseURL}/auth/verify-email/resend`, {
+        data: {},
+      })
+    ).status(),
+  ).toBe(503);
+  expect(
+    (
+      await member.client.post(`${baseURL}/auth/google`, {
+        data: { credential: "invalid", role: "user" },
+      })
+    ).status(),
+  ).toBe(400);
+
+  const verificationToken = `verify-${crypto.randomUUID()}`;
+  const verificationHash = createHash("sha256")
+    .update(verificationToken)
+    .digest("hex");
+  databaseCommand(
+    `INSERT INTO auth_tokens(token_hash,user_id,purpose,expires_at) VALUES('${verificationHash}','${member.user.id}','verify_email',now()+interval '1 hour')`,
+  );
+  expect(
+    (
+      await member.client.post(`${baseURL}/auth/verify-email`, {
+        data: { token: verificationToken },
+      })
+    ).status(),
+  ).toBe(204);
+  expect(
+    (await (await member.client.get(`${baseURL}/auth/me`)).json()).is_verified,
+  ).toBe(true);
+  expect(
+    (
+      await member.client.post(`${baseURL}/auth/verify-email`, {
+        data: { token: verificationToken },
+      })
+    ).status(),
+  ).toBe(400);
+
+  expect(
+    (
+      await member.client.post(`${baseURL}/auth/password/forgot`, {
+        data: { email: "missing-account@example.test" },
+      })
+    ).status(),
+  ).toBe(204);
+  expect(
+    (
+      await member.client.post(`${baseURL}/auth/password/forgot`, {
+        data: { email: member.email },
+      })
+    ).status(),
+  ).toBe(204);
+  expect(
+    Number(
+      databaseCommand(
+        `SELECT count(*) FROM auth_tokens WHERE user_id='${member.user.id}' AND purpose='reset_password' AND used_at IS NULL`,
+      ),
+    ),
+  ).toBe(1);
+
+  databaseCommand(
+    `UPDATE auth_tokens SET used_at=now() WHERE user_id='${member.user.id}' AND purpose='reset_password' AND used_at IS NULL`,
+  );
+  const resetToken = `reset-${crypto.randomUUID()}`;
+  const resetHash = createHash("sha256").update(resetToken).digest("hex");
+  databaseCommand(
+    `INSERT INTO auth_tokens(token_hash,user_id,purpose,expires_at) VALUES('${resetHash}','${member.user.id}','reset_password',now()+interval '1 hour')`,
+  );
+  const replacement = "A-new-integration-passphrase!";
+  expect(
+    (
+      await member.client.post(`${baseURL}/auth/password/reset`, {
+        data: { token: resetToken, new_password: replacement },
+      })
+    ).status(),
+  ).toBe(204);
+  expect((await member.client.get(`${baseURL}/auth/me`)).status()).toBe(401);
+  expect(
+    (
+      await member.client.post(`${baseURL}/auth/login`, {
+        data: { email: member.email, password: "Integration-test-passphrase!" },
+      })
+    ).status(),
+  ).toBe(401);
+  expect(
+    (
+      await member.client.post(`${baseURL}/auth/login`, {
+        data: { email: member.email, password: replacement },
+      })
+    ).status(),
+  ).toBe(200);
+  expect(
+    (
+      await member.client.post(`${baseURL}/auth/password/reset`, {
+        data: { token: resetToken, new_password: replacement },
+      })
+    ).status(),
+  ).toBe(400);
+});
 test("ownership, publishing, search, favorites, inquiries and session revocation", async () => {
   const owner = await account();
   const other = await account();

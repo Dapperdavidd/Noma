@@ -5,7 +5,8 @@
 - React/TypeScript production bundle builds successfully.
 - Rust formatter and Clippy pass with warnings treated as errors.
 - Three Rust unit tests cover request limiting, signature determinism and cursor parsing.
-- Nine Playwright integration/browser scenarios pass against a real PostgreSQL test database:
+- Ten Playwright integration/browser scenarios pass against a real PostgreSQL test database:
+  - Email verification, generic recovery responses, single-use reset tokens, password replacement and session revocation.
   - Malformed edit identifiers cannot fall through to property creation.
   - Managed photo ownership, duplicate attachment prevention and removal queuing.
   - Ownership checks, private drafts, publication, favorites, inquiry isolation and logout revocation.
@@ -33,4 +34,4 @@ These are individual local query executions, not concurrent load-test results or
 
 ## External checks still required
 
-Transactional email recovery/verification, Google authentication and production deployment have not been connected. Homepage images are illustrative Unsplash images, not evidence of real Nigerian listings; replace with owned or approved launch imagery. Browser screenshots were inspected at desktop and 390-pixel mobile widths. A live signed Cloudinary upload was issued, independently confirmed through the API, discarded through the managed endpoint, and verified absent from the provider afterward.
+Google authentication and transactional recovery/verification are implemented. Resend is configured for development, while live Google testing still needs the client ID in the private environment and public email delivery needs a verified sending domain. Production deployment has not been connected. Homepage images are illustrative Unsplash images, not evidence of real Nigerian listings; replace with owned or approved launch imagery. Browser screenshots were inspected at desktop and 390-pixel mobile widths. A live signed Cloudinary upload was issued, independently confirmed through the API, discarded through the managed endpoint, and verified absent from the provider afterward.

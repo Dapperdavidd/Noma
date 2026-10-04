@@ -2,7 +2,9 @@ mod admin;
 mod agents;
 mod auth;
 mod community;
+mod email;
 mod error;
+mod google_auth;
 mod images;
 mod observability;
 mod pagination;
@@ -39,11 +41,15 @@ async fn main() -> std::io::Result<()> {
     let bind = std::env::var("API_BIND").unwrap_or_else(|_| "127.0.0.1:8080".into());
     tracing::info!(%bind,"NOMA API starting");
     let limiter = web::Data::new(security::RateLimiter::default());
+    let email = web::Data::new(email::EmailClient::from_env());
+    let google = web::Data::new(google_auth::GoogleVerifier::from_env());
     HttpServer::new(move || {
         let allowed = origin.clone();
         let limits = limiter.clone();
         App::new()
             .app_data(web::Data::new(pool.clone()))
+            .app_data(email.clone())
+            .app_data(google.clone())
             .app_data(
                 web::JsonConfig::default()
                     .limit(64 * 1024)
@@ -106,11 +112,7 @@ async fn main() -> std::io::Result<()> {
                         .is_some_and(|v| v == allowed);
                 let throttled = !safe
                     && req.peer_addr().is_some_and(|peer| {
-                        !limits.allow(
-                            peer.ip(),
-                            req.path().starts_with("/api/v1/auth/login")
-                                || req.path().starts_with("/api/v1/auth/register"),
-                        )
+                        !limits.allow(peer.ip(), req.path().starts_with("/api/v1/auth/"))
                     });
                 let future = if valid && !throttled {
                     Some(srv.call(req))

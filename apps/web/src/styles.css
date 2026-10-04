@@ -781,6 +781,48 @@ textarea {
   text-decoration: underline;
   color: #3e4a2c;
 }
+.social-auth {
+  margin-top: 24px;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #999e92;
+  font-size: 11px;
+  margin-bottom: 20px;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  height: 1px;
+  background: var(--line);
+  flex: 1;
+}
+.google-button {
+  min-height: 44px;
+  display: flex;
+  justify-content: center;
+}
+.auth-single {
+  width: min(520px, calc(100% - 40px));
+  min-height: calc(100vh - 102px);
+  margin: 0 auto;
+  padding: 90px 0;
+}
+.auth-single h1 {
+  margin: 15px 0;
+}
+.auth-single form {
+  margin-top: 30px;
+}
+.inline-action {
+  padding: 0;
+  color: var(--olive);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 600;
+}
 .detail > .text-link {
   margin-bottom: 30px;
 }

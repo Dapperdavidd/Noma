@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { api, type User } from "./api";
@@ -15,11 +15,16 @@ import { Dashboard } from "./pages/Dashboard";
 import { ListingForm } from "./pages/ListingForm";
 import { Saved } from "./pages/Saved";
 import { Discover } from "./pages/Discover";
+import {
+  ForgotPassword,
+  ResetPassword,
+  VerifyEmail,
+} from "./pages/PasswordRecovery";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
       setUser(await api<User>("/auth/me"));
     } catch {
@@ -27,10 +32,10 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
   useEffect(() => {
     void refresh();
-  }, []);
+  }, [refresh]);
   return (
     <Auth.Provider value={{ user, loading, refresh }}>
       <Routes>
@@ -39,6 +44,9 @@ export default function App() {
         <Route path="/properties/:slug" element={<Detail />} />
         <Route path="/login" element={<Authentication key="login" />} />
         <Route path="/join" element={<Authentication key="join" />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/discover" element={<Discover />} />
         <Route
           path="/account"
