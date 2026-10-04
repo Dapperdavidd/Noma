@@ -4,8 +4,8 @@ export const hero =
 export const samples: Property[] = [
   [
     "The Palm Residence",
-    85000000,
-    "sale",
+    8500000,
+    "rent",
     "duplex",
     "Lekki Phase 1",
     "Lagos",
@@ -28,8 +28,8 @@ export const samples: Property[] = [
   ],
   [
     "Space to make your own",
-    120000000,
-    "sale",
+    12000000,
+    "rent",
     "house",
     "Maitama",
     "Abuja",
@@ -64,7 +64,7 @@ export const samples: Property[] = [
   bathrooms: Number(v[7]),
   size_sqm: Number(v[8]),
   cover_image: `https://images.unsplash.com/${v[9]}?auto=format&fit=crop&w=900&q=85`,
-  rental_period: v[2] === "rent" ? "year" : null,
+  rental_period: "year",
   status: "active",
   is_verified: false,
   created_at: new Date(0).toISOString(),
