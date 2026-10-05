@@ -17,7 +17,7 @@ npm run dev
 
 Open http://localhost:5173. The API listens on http://127.0.0.1:8080. Vite proxies `/api` to the API. SQL migrations run at API startup. Configure `DATABASE_URL` for your own PostgreSQL installation if not using Docker. Never commit `.env`.
 
-The location catalog includes all 36 states and the Federal Capital Territory, with one primary city in each and selected launch areas in Lagos, Abuja, and Port Harcourt. No fake accounts or live properties are seeded. The homepage displays clearly labeled illustrative cards until real listings exist. Any signed-in user can create a rental draft, then publish it from the property dashboard.
+The location catalog includes all 36 states and the Federal Capital Territory, with one primary city in each and selected launch areas in Lagos, Abuja, and Port Harcourt. No fake accounts or live properties are seeded. The homepage displays clearly labeled illustrative cards until real listings exist. Any signed-in user can create and publish a property draft; the marketplace search supports sale, rent and short-let listings under one top-level Rent destination.
 
 ## Structure
 
@@ -41,7 +41,7 @@ TEST_DATABASE_URL=postgres://noma:noma@localhost:5432/noma_test npm test
 
 ## Working flows
 
-Account registration and sign-in; Google identity linking; email verification and single-use password recovery; contact profiles and secure password rotation; server-side ownership checks; rental draft creation and editing; publish/archive/status management; full-text search; normalized state/city/area filters; budget, bedroom, media and multi-amenity filters; featured and verified discovery; stable cursor pagination; photo galleries; uploaded video and YouTube walkthroughs; saved properties; WhatsApp-first contact; inquiries and a property dashboard. Signed-in users can report suspicious listings, and administrators see marketplace metrics and resolve reports through an auditable review queue. Media accepts externally hosted HTTPS URLs and signed direct Cloudinary uploads when configured. Managed uploads are confirmed server-side, tied to their owner and listing, and cleaned up when discarded or removed. No media binaries are stored in PostgreSQL.
+Account registration and sign-in; Google identity linking; email verification and single-use password recovery; contact profiles and secure password rotation; server-side ownership checks; sale, rent and short-let draft creation and editing; publish/archive/status management; full-text search; normalized state/city/area filters; budget, bedroom, media and multi-amenity filters; featured and verified discovery; stable cursor pagination; photo galleries; uploaded video and YouTube walkthroughs; saved properties; WhatsApp-first contact; inquiries and a property dashboard. Agent accounts have public professional profiles, owner-authorization declarations, inspection requests and customer ratings that can only be submitted after a completed inspection. Signed-in users can report suspicious listings, and administrators see marketplace metrics and resolve reports through an auditable review queue. Media accepts externally hosted HTTPS URLs and signed direct Cloudinary uploads when configured. Managed uploads are confirmed server-side, tied to their owner and listing, and cleaned up when discarded or removed. No media binaries are stored in PostgreSQL.
 
 ## Before public launch
 
@@ -65,10 +65,10 @@ Each signed upload creates a short-lived database intent. After the browser uplo
 
 ## Administration
 
-The `/admin` operations dashboard is available only to database-provisioned administrators. It reports user, session, property, daily media and moderation counts and includes the review queues. Public registration cannot create administrators. Provision the initial trusted account with an audited database operation after it has registered; no default admin password exists. Property and agent verification are separate, featured placement is time-limited, and every review action records an actor and reason. Agents can edit their professional profiles at `/dashboard/profile`; every user can manage their own listings and inquiry progress in the property dashboard.
+The `/admin` operations dashboard is available only to database-provisioned administrators. It reports user, session, property, daily media and moderation counts and includes the review queues. Public registration cannot create administrators. Provision the initial trusted account with an audited database operation after it has registered; no default admin password exists. Property and agent verification are separate, featured placement is time-limited, and every review action records an actor and reason. Agents can edit their professional profiles at `/dashboard/profile`; public agent profiles expose reputation without revealing private account details. Every user can manage listings, inquiries, inspections and eligible reviews in the property dashboard.
 
 ## Test database and benchmarks
 
-Integration tests create disposable accounts/listings only in `noma_test`, never in `noma_dev`. They start an API on port 8081 and frontend on 5174. Install the test browser with `npx playwright install chromium`. CI provisions its own PostgreSQL service and runs these tests automatically. Test fixture data remains in the isolated test database between runs.
+Integration tests create disposable accounts/listings only in `noma_test`, never in `noma_dev`. They start an API on port 18081 and frontend on 5174. Locally, the test runner derives the `noma_test` connection from the private `DATABASE_URL` when it points to `noma_dev`; `TEST_DATABASE_URL` can override it. Install the test browser with `npx playwright install chromium`. CI provisions its own PostgreSQL service and runs these tests automatically. Test fixture data remains in the isolated test database between runs.
 
 `psql "$TEST_DATABASE_URL" -f scripts/search-benchmark.sql` measures the actual card query with 50,000 synthetic properties and images inside a rolled-back transaction. See `docs/validation.md` for measured results and limits.

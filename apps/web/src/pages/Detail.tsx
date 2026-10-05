@@ -14,6 +14,8 @@ import {
   Check,
   PlayCircle,
   Send,
+  Star,
+  CalendarDays,
 } from "lucide-react";
 import { api, money, type Property } from "../api";
 import { hero } from "../demo";
@@ -29,6 +31,8 @@ export function Detail() {
   const [sending, setSending] = useState(false);
   const [reported, setReported] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [inspectionRequested, setInspectionRequested] = useState(false);
+  const [requestingInspection, setRequestingInspection] = useState(false);
   const [selected, setSelected] = useState(0);
   const { user } = useAuth();
   const favorites = useFavorites();
@@ -68,6 +72,26 @@ export function Detail() {
       setError((e as Error).message);
     } finally {
       setReporting(false);
+    }
+  }
+  async function requestInspection(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setRequestingInspection(true);
+    setError("");
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    try {
+      await api(`/properties/${p!.id}/inspections`, {
+        method: "POST",
+        body: JSON.stringify({
+          note: values.note,
+          proposed_at: new Date(String(values.proposed_at)).toISOString(),
+        }),
+      });
+      setInspectionRequested(true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRequestingInspection(false);
     }
   }
   return (
@@ -184,6 +208,11 @@ export function Detail() {
                 <p className="muted">
                   {p.area}, {p.city}, {p.state}
                 </p>
+                <p className="listing-relationship">
+                  {p.lister_relationship === "authorized_agent"
+                    ? "Listed by an agent who confirmed they are authorized by the owner."
+                    : "Listed directly by the property owner."}
+                </p>
               </div>
               <aside className="contact-panel">
                 <div className="card-price">
@@ -199,12 +228,28 @@ export function Detail() {
                 <div className="agent">
                   <div className="avatar">{p.agent?.first_name[0]}</div>
                   <div>
-                    <strong>
-                      {p.agent?.first_name} {p.agent?.last_name}
-                    </strong>
+                    {p.agent?.role === "agent" ? (
+                      <Link to={`/agents/${p.agent.id}`}>
+                        <strong>
+                          {p.agent.first_name} {p.agent.last_name}
+                        </strong>
+                      </Link>
+                    ) : (
+                      <strong>
+                        {p.agent?.first_name} {p.agent?.last_name}
+                      </strong>
+                    )}
                     <p>{p.agent?.agency_name || "Property agent"}</p>
                     {p.agent?.verification_status === "verified" && (
                       <small>Verified agent</small>
+                    )}
+                    {p.agent?.role === "agent" && (
+                      <small className="agent-rating">
+                        <Star size={13} fill="currentColor" />{" "}
+                        {p.agent.rating || "New"}
+                        {p.agent.review_count > 0 &&
+                          ` · ${p.agent.review_count} reviews`}
+                      </small>
                     )}
                   </div>
                 </div>
@@ -240,6 +285,55 @@ export function Detail() {
                     </a>
                   )}
                 </div>
+                {p.agent?.role === "agent" && user?.id !== p.agent.id && (
+                  <div className="inspection-request">
+                    <h3>
+                      <CalendarDays size={18} /> Request an inspection
+                    </h3>
+                    {inspectionRequested ? (
+                      <Notice>
+                        Inspection requested. Track it from your property
+                        dashboard.
+                      </Notice>
+                    ) : user ? (
+                      <form onSubmit={requestInspection}>
+                        <label>
+                          Preferred date and time
+                          <input
+                            name="proposed_at"
+                            type="datetime-local"
+                            required
+                          />
+                        </label>
+                        <label>
+                          Note for the agent
+                          <textarea
+                            name="note"
+                            minLength={10}
+                            maxLength={1000}
+                            required
+                            defaultValue="I would like to inspect this property. Please confirm if this time works."
+                          />
+                        </label>
+                        <button
+                          className="button outline full"
+                          disabled={requestingInspection}
+                        >
+                          {requestingInspection
+                            ? "Requesting…"
+                            : "Request inspection"}
+                        </button>
+                      </form>
+                    ) : (
+                      <Link
+                        className="button outline full"
+                        to={`/login?next=${encodeURIComponent(`/properties/${p.slug}`)}`}
+                      >
+                        Sign in to request an inspection
+                      </Link>
+                    )}
+                  </div>
+                )}
                 {sent ? (
                   <Notice>
                     Your inquiry has been sent. The agent can now respond using

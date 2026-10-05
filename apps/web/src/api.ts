@@ -17,6 +17,7 @@ export type Property = {
   title: string;
   price: number;
   listing_type: string;
+  lister_relationship?: "owner" | "authorized_agent";
   property_type: string;
   rental_period: string | null;
   bedrooms: number | null;
@@ -53,7 +54,10 @@ export type Property = {
     first_name: string;
     last_name: string;
     agency_name: string | null;
+    role: "user" | "agent" | "admin";
     verification_status: string;
+    rating: number;
+    review_count: number;
     phone: string | null;
     whatsapp: string | null;
     telegram: string | null;

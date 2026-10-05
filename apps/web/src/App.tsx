@@ -15,6 +15,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { ListingForm } from "./pages/ListingForm";
 import { Saved } from "./pages/Saved";
 import { Discover } from "./pages/Discover";
+import { PublicAgentProfile } from "./pages/PublicAgentProfile";
 import {
   ForgotPassword,
   ResetPassword,
@@ -42,6 +43,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/properties" element={<Browse />} />
         <Route path="/properties/:slug" element={<Detail />} />
+        <Route path="/agents/:id" element={<PublicAgentProfile />} />
         <Route path="/login" element={<Authentication key="login" />} />
         <Route path="/join" element={<Authentication key="join" />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />

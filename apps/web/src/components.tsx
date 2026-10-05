@@ -113,7 +113,10 @@ export function Footer() {
 }
 export function SearchBar({ initial = false }: { initial?: boolean }) {
   const [params] = useSearchParams();
-  const type = "rent";
+  const selected = params.get("listing_type");
+  const [type, setType] = useState(
+    selected === "sale" || selected === "short_let" ? selected : "rent",
+  );
   const navigate = useNavigate();
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -128,13 +131,31 @@ export function SearchBar({ initial = false }: { initial?: boolean }) {
       onSubmit={submit}
       className={initial ? "search-wrap" : "search-wrap compact"}
     >
-      {initial && (
-        <div className="search-tabs single">
-          <button type="button" className="active">
-            Rent
+      <div className="search-tabs">
+        {[
+          ["sale", "Buy"],
+          ["rent", "Rent"],
+          ["short_let", "Short let"],
+        ].map(([value, label]) => (
+          <button
+            type="button"
+            className={type === value ? "active" : ""}
+            aria-pressed={type === value}
+            key={value}
+            onClick={() => {
+              setType(value);
+              if (!initial) {
+                const next = new URLSearchParams(params);
+                next.set("listing_type", value);
+                next.delete("cursor");
+                navigate(`/properties?${next}`);
+              }
+            }}
+          >
+            {label}
           </button>
-        </div>
-      )}
+        ))}
+      </div>
       <div className="search-bar">
         <label className="location-input">
           <Search size={20} />

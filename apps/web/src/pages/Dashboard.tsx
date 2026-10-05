@@ -1,6 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, Plus, Building2, MessageCircle } from "lucide-react";
+import {
+  ArrowUpRight,
+  Plus,
+  Building2,
+  MessageCircle,
+  CalendarCheck,
+  Star,
+} from "lucide-react";
 import { api, money, type Property } from "../api";
 import { hero } from "../demo";
 import { useAuth } from "../auth";
@@ -20,10 +27,21 @@ type Summary = {
   active_properties: number;
   inquiries: number;
 };
+type Inspection = {
+  id: string;
+  status: "requested" | "confirmed" | "completed" | "cancelled";
+  proposed_at: string;
+  note: string;
+  role: "host" | "guest";
+  reviewed: boolean;
+  property: { id: string; title: string; slug: string };
+  other_party: { id: string; name: string };
+};
 export function Dashboard() {
   const { user } = useAuth();
   const [items, setItems] = useState<Property[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [inspections, setInspections] = useState<Inspection[]>([]);
   const [propertyCursor, setPropertyCursor] = useState<string | null>(null);
   const [leadCursor, setLeadCursor] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary>({
@@ -36,16 +54,18 @@ export function Dashboard() {
   const [tab, setTab] = useState("properties");
   async function load() {
     try {
-      const [p, l, totals] = await Promise.all([
+      const [p, l, totals, visits] = await Promise.all([
         api<Page<Property>>("/dashboard/properties"),
         api<Page<Lead>>("/dashboard/inquiries"),
         api<Summary>("/dashboard/summary"),
+        api<Inspection[]>("/dashboard/inspections"),
       ]);
       setItems(p.data);
       setPropertyCursor(p.next_cursor);
       setLeads(l.data);
       setLeadCursor(l.next_cursor);
       setSummary(totals);
+      setInspections(visits);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -81,6 +101,18 @@ export function Dashboard() {
   async function status(p: Property, value: string) {
     try {
       await api(`/properties/${p.id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: value }),
+      });
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  async function inspectionStatus(id: string, value: string) {
+    setError("");
+    try {
+      await api(`/inspections/${id}`, {
         method: "PATCH",
         body: JSON.stringify({ status: value }),
       });
@@ -138,6 +170,12 @@ export function Dashboard() {
           onClick={() => setTab("inquiries")}
         >
           Inquiries
+        </button>
+        <button
+          className={tab === "inspections" ? "active" : ""}
+          onClick={() => setTab("inspections")}
+        >
+          Inspections
         </button>
       </div>
       {error && <Notice>{error}</Notice>}
@@ -202,56 +240,238 @@ export function Dashboard() {
             </Link>
           </div>
         )
-      ) : leads.length ? (
-        <>
-          <div className="leads">
-            {leads.map((l) => (
-              <article key={l.id}>
-                <select
-                  aria-label={`Inquiry status for ${l.name}`}
-                  value={l.status}
-                  onChange={async (e) => {
-                    try {
-                      await api(`/dashboard/inquiries/${l.id}`, {
-                        method: "PATCH",
-                        body: JSON.stringify({ status: e.target.value }),
-                      });
-                      await load();
-                    } catch (e) {
-                      setError((e as Error).message);
-                    }
-                  }}
-                >
-                  {["new", "contacted", "closed"].map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </select>
-                <h3>{l.name}</h3>
-                <p className="muted">{l.property}</p>
-                <p>{l.message}</p>
-                <a className="text-link" href={`mailto:${l.email}`}>
-                  Reply by email <ArrowUpRight size={16} />
-                </a>
-              </article>
-            ))}
+      ) : tab === "inquiries" ? (
+        leads.length ? (
+          <>
+            <div className="leads">
+              {leads.map((l) => (
+                <article key={l.id}>
+                  <select
+                    aria-label={`Inquiry status for ${l.name}`}
+                    value={l.status}
+                    onChange={async (e) => {
+                      try {
+                        await api(`/dashboard/inquiries/${l.id}`, {
+                          method: "PATCH",
+                          body: JSON.stringify({ status: e.target.value }),
+                        });
+                        await load();
+                      } catch (e) {
+                        setError((e as Error).message);
+                      }
+                    }}
+                  >
+                    {["new", "contacted", "closed"].map((s) => (
+                      <option key={s}>{s}</option>
+                    ))}
+                  </select>
+                  <h3>{l.name}</h3>
+                  <p className="muted">{l.property}</p>
+                  <p>{l.message}</p>
+                  <a className="text-link" href={`mailto:${l.email}`}>
+                    Reply by email <ArrowUpRight size={16} />
+                  </a>
+                </article>
+              ))}
+            </div>
+            {leadCursor && (
+              <button
+                className="button ghost load-more"
+                onClick={() => void showMore("inquiries")}
+                disabled={loadingMore}
+              >
+                {loadingMore ? "Loading…" : "Show more inquiries"}
+              </button>
+            )}
+          </>
+        ) : (
+          <div className="empty">
+            <MessageCircle size={40} />
+            <h2>Good conversations start here.</h2>
+            <p>Inquiries about your properties will appear in this space.</p>
           </div>
-          {leadCursor && (
-            <button
-              className="button ghost load-more"
-              onClick={() => void showMore("inquiries")}
-              disabled={loadingMore}
-            >
-              {loadingMore ? "Loading…" : "Show more inquiries"}
-            </button>
-          )}
-        </>
+        )
+      ) : inspections.length ? (
+        <div className="inspection-list">
+          {inspections.map((inspection) => (
+            <article key={inspection.id}>
+              <div className="inspection-heading">
+                <div>
+                  <span className="status-pill">{inspection.status}</span>
+                  <h3>{inspection.property.title}</h3>
+                  <p className="muted">
+                    {inspection.role === "host" ? "Customer" : "Agent"}:{" "}
+                    {inspection.other_party.name}
+                  </p>
+                </div>
+                <CalendarCheck size={25} />
+              </div>
+              <p>
+                {new Date(inspection.proposed_at).toLocaleString("en-NG", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}
+              </p>
+              <p>{inspection.note}</p>
+              <div className="inspection-actions">
+                <Link
+                  className="text-link"
+                  to={`/properties/${inspection.property.slug}`}
+                >
+                  View property <ArrowUpRight size={14} />
+                </Link>
+                {inspection.role === "host" &&
+                  inspection.status === "requested" && (
+                    <>
+                      <button
+                        className="button olive"
+                        onClick={() =>
+                          void inspectionStatus(inspection.id, "confirmed")
+                        }
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        className="button ghost"
+                        onClick={() =>
+                          void inspectionStatus(inspection.id, "cancelled")
+                        }
+                      >
+                        Decline
+                      </button>
+                    </>
+                  )}
+                {inspection.role === "host" &&
+                  inspection.status === "confirmed" && (
+                    <>
+                      <button
+                        className="button olive"
+                        onClick={() =>
+                          void inspectionStatus(inspection.id, "completed")
+                        }
+                      >
+                        Mark completed
+                      </button>
+                      <button
+                        className="button ghost"
+                        onClick={() =>
+                          void inspectionStatus(inspection.id, "cancelled")
+                        }
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                {inspection.role === "guest" &&
+                  ["requested", "confirmed"].includes(inspection.status) && (
+                    <button
+                      className="button ghost"
+                      onClick={() =>
+                        void inspectionStatus(inspection.id, "cancelled")
+                      }
+                    >
+                      Cancel request
+                    </button>
+                  )}
+              </div>
+              {inspection.role === "guest" &&
+                inspection.status === "completed" &&
+                !inspection.reviewed && (
+                  <ReviewForm
+                    inspectionId={inspection.id}
+                    onSaved={load}
+                    onError={setError}
+                  />
+                )}
+              {inspection.reviewed && (
+                <p className="verified">
+                  <Star size={15} fill="currentColor" /> Review submitted
+                </p>
+              )}
+            </article>
+          ))}
+        </div>
       ) : (
         <div className="empty">
-          <MessageCircle size={40} />
-          <h2>Good conversations start here.</h2>
-          <p>Inquiries about your properties will appear in this space.</p>
+          <CalendarCheck size={40} />
+          <h2>No inspections yet.</h2>
+          <p>Inspection requests and completed visits will appear here.</p>
         </div>
       )}
     </>
+  );
+}
+
+function ReviewForm({
+  inspectionId,
+  onSaved,
+  onError,
+}: {
+  inspectionId: string;
+  onSaved: () => Promise<void>;
+  onError: (message: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    onError("");
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    try {
+      await api(`/inspections/${inspectionId}/review`, {
+        method: "POST",
+        body: JSON.stringify({
+          ...values,
+          rating: Number(values.rating),
+          communication: Number(values.communication),
+          punctuality: Number(values.punctuality),
+          property_accuracy: Number(values.property_accuracy),
+          professionalism: Number(values.professionalism),
+        }),
+      });
+      await onSaved();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <form className="review-form" onSubmit={submit}>
+      <h4>Rate this agent</h4>
+      <div className="review-scores">
+        {[
+          ["rating", "Overall"],
+          ["communication", "Communication"],
+          ["punctuality", "Punctuality"],
+          ["property_accuracy", "Property accuracy"],
+          ["professionalism", "Professionalism"],
+        ].map(([name, label]) => (
+          <label key={name}>
+            {label}
+            <select name={name} defaultValue="5">
+              {[5, 4, 3, 2, 1].map((score) => (
+                <option key={score} value={score}>
+                  {score} / 5
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+      </div>
+      <label>
+        Your review
+        <textarea
+          name="comment"
+          minLength={10}
+          maxLength={1500}
+          required
+          placeholder="Share what happened during the inspection."
+        />
+      </label>
+      <button className="button olive" disabled={busy}>
+        {busy ? "Submitting…" : "Submit verified review"}
+      </button>
+    </form>
   );
 }

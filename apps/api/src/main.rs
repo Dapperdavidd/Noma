@@ -6,6 +6,7 @@ mod email;
 mod error;
 mod google_auth;
 mod images;
+mod inspections;
 mod observability;
 mod pagination;
 mod properties;
@@ -81,7 +82,7 @@ async fn main() -> std::io::Result<()> {
     let origins = web_origins();
     let bind = std::env::var("API_BIND").unwrap_or_else(|_| "127.0.0.1:8080".into());
     tracing::info!(%bind,"NOMA API starting");
-    let limiter = web::Data::new(security::RateLimiter::default());
+    let limiter = web::Data::new(security::RateLimiter::from_env());
     let email = web::Data::new(email::EmailClient::from_env());
     let google = web::Data::new(google_auth::GoogleVerifier::from_env());
     HttpServer::new(move || {
@@ -190,6 +191,7 @@ async fn main() -> std::io::Result<()> {
                     .configure(reports::routes)
                     .configure(community::routes)
                     .configure(images::routes)
+                    .configure(inspections::routes)
                     .configure(agents::routes)
                     .configure(admin::routes),
             )

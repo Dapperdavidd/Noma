@@ -7,11 +7,31 @@ use std::{
 
 /// Per-process guardrail. Trust only the socket peer, never arbitrary forwarding headers.
 /// A production reverse proxy should apply distributed limits before forwarding traffic.
-#[derive(Default)]
 pub struct RateLimiter {
     buckets: Mutex<HashMap<(IpAddr, bool), (Instant, u32)>>,
+    authentication_limit: u32,
+}
+impl Default for RateLimiter {
+    fn default() -> Self {
+        Self {
+            buckets: Mutex::default(),
+            authentication_limit: 30,
+        }
+    }
 }
 impl RateLimiter {
+    pub fn from_env() -> Self {
+        let authentication_limit = std::env::var("RATE_LIMIT_AUTH_MAX")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .filter(|value| (1..=10_000).contains(value))
+            .unwrap_or(30);
+        Self {
+            buckets: Mutex::default(),
+            authentication_limit,
+        }
+    }
+
     pub fn allow(&self, ip: IpAddr, authentication: bool) -> bool {
         let now = Instant::now();
         let window = if authentication {
@@ -19,7 +39,11 @@ impl RateLimiter {
         } else {
             Duration::from_secs(60)
         };
-        let limit = if authentication { 30 } else { 120 };
+        let limit = if authentication {
+            self.authentication_limit
+        } else {
+            120
+        };
         let Ok(mut buckets) = self.buckets.lock() else {
             return false;
         };

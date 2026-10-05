@@ -650,6 +650,13 @@ footer p {
 .compact .search-bar {
   border: 1px solid var(--line);
 }
+.field-help {
+  display: block;
+  margin-top: 7px;
+  color: #777d70;
+  font-size: 12px;
+  font-weight: 400;
+}
 .results-toolbar {
   display: flex;
   align-items: center;
@@ -928,6 +935,188 @@ textarea {
   font-size: 12px;
   color: #838978;
   margin: 5px 0;
+}
+.agent a {
+  color: inherit;
+}
+.agent-rating {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #6c5b1c;
+  margin-top: 4px;
+}
+.listing-relationship {
+  padding: 14px 16px;
+  border-left: 3px solid var(--olive);
+  background: #f2f2e9;
+  color: #59604f;
+  font-size: 13px;
+}
+.inspection-request {
+  border-top: 1px solid var(--line);
+  margin-top: 22px;
+  padding-top: 22px;
+}
+.inspection-request h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 0;
+}
+.public-agent-page {
+  min-height: 75vh;
+}
+.agent-hero-card {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin: 38px 0 30px;
+  padding: 38px;
+  border: 1px solid var(--line);
+  background: #f5f4ec;
+}
+.agent-hero-card h1 {
+  margin: 10px 0 5px;
+}
+.agent-avatar-large {
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: var(--olive);
+  color: white;
+  font-family: var(--serif);
+  font-size: 36px;
+}
+.agent-trust-line,
+.agent-trust-line > span,
+.stars {
+  display: flex;
+  align-items: center;
+}
+.agent-trust-line {
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 14px;
+  color: #5b634e;
+  font-size: 13px;
+}
+.agent-trust-line > span,
+.stars {
+  gap: 4px;
+}
+.stars {
+  color: #8d741e;
+}
+.agent-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+.agent-metrics > div {
+  display: grid;
+  gap: 7px;
+  padding: 25px;
+  background: var(--cream);
+}
+.agent-metrics strong {
+  font-size: 28px;
+}
+.agent-metrics span {
+  color: #74796e;
+  font-size: 12px;
+}
+.agent-about,
+.agent-reviews {
+  margin-top: 54px;
+}
+.agent-about {
+  max-width: 760px;
+}
+.agent-about p {
+  line-height: 1.8;
+}
+.review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.review-grid article,
+.inspection-list article {
+  border: 1px solid var(--line);
+  padding: 24px;
+  background: white;
+}
+.review-grid article > p {
+  line-height: 1.7;
+  min-height: 48px;
+}
+.review-grid article > strong,
+.review-grid article > small {
+  display: block;
+}
+.review-grid article > small {
+  color: #858a80;
+  margin-top: 4px;
+}
+.review-grid dl {
+  border-top: 1px solid var(--line);
+  margin: 18px 0 0;
+  padding-top: 14px;
+  font-size: 12px;
+}
+.review-grid dl div {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 7px;
+}
+.review-grid dd {
+  margin: 0;
+  font-weight: 600;
+}
+.compact-empty {
+  min-height: 180px;
+}
+.inspection-list {
+  display: grid;
+  gap: 16px;
+}
+.inspection-heading,
+.inspection-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.inspection-heading h3 {
+  margin: 9px 0 4px;
+}
+.inspection-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+.inspection-actions .button {
+  width: auto;
+  padding: 10px 16px;
+}
+.review-form {
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+.review-scores {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+.review-scores label {
+  font-size: 11px;
 }
 .avatar {
   width: 44px;
@@ -2169,6 +2358,20 @@ form .amenity-picker input {
   }
 }
 @media (max-width: 700px) {
+  .agent-hero-card {
+    align-items: flex-start;
+    padding: 24px;
+  }
+  .agent-avatar-large {
+    width: 66px;
+    height: 66px;
+    font-size: 23px;
+  }
+  .agent-metrics,
+  .review-grid,
+  .review-scores {
+    grid-template-columns: 1fr;
+  }
   .listing-video-previews,
   .video-grid {
     grid-template-columns: 1fr;

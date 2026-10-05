@@ -68,6 +68,8 @@ pub struct Listing {
     pub title: String,
     pub description: String,
     pub listing_type: String,
+    #[serde(default = "default_lister_relationship")]
+    pub lister_relationship: String,
     pub property_type: String,
     pub price: i64,
     pub rental_period: Option<String>,
@@ -107,6 +109,9 @@ impl Listing {
             .contains(&self.property_type.as_str())
         {
             return Err(bad("Invalid property or listing type"));
+        }
+        if !["owner", "authorized_agent"].contains(&self.lister_relationship.as_str()) {
+            return Err(bad("Invalid relationship to the property"));
         }
         if self.price <= 0
             || self.price > 9_007_199_254_740_991
@@ -171,6 +176,10 @@ impl Listing {
         }
         Ok(())
     }
+}
+
+fn default_lister_relationship() -> String {
+    "owner".into()
 }
 #[derive(Deserialize)]
 pub struct Status {

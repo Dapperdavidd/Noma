@@ -204,7 +204,7 @@ pub async fn detail(
     slug: String,
     owner: Option<&auth::User>,
 ) -> Result<Value, ApiError> {
-    let row:Value=sqlx::query_scalar("SELECT to_jsonb(p) || jsonb_build_object('city',c.name,'state',s.name,'area',a.name,'images',COALESCE((SELECT jsonb_agg(to_jsonb(i) ORDER BY i.position) FROM property_images i WHERE i.property_id=p.id),'[]'::jsonb),'videos',COALESCE((SELECT jsonb_agg(to_jsonb(v) ORDER BY v.position) FROM property_videos v WHERE v.property_id=p.id),'[]'::jsonb),'amenity_ids',COALESCE((SELECT jsonb_agg(pa.amenity_id) FROM property_amenities pa WHERE pa.property_id=p.id),'[]'::jsonb),'amenities',COALESCE((SELECT jsonb_agg(am.name) FROM amenities am JOIN property_amenities pa ON pa.amenity_id=am.id WHERE pa.property_id=p.id),'[]'::jsonb),'agent',jsonb_build_object('id',u.id,'first_name',u.first_name,'last_name',u.last_name,'phone',u.phone,'whatsapp',u.whatsapp,'telegram',u.telegram,'instagram',u.instagram,'agency_name',ap.agency_name,'verification_status',COALESCE(ap.verification_status,'pending'))) FROM properties p JOIN cities c ON c.id=p.city_id JOIN states s ON s.id=p.state_id LEFT JOIN areas a ON a.id=p.area_id JOIN users u ON u.id=p.agent_id LEFT JOIN agent_profiles ap ON ap.user_id=u.id WHERE p.slug=$1 AND (p.status='active' OR p.agent_id=$2 OR $3)").bind(slug).bind(owner.as_ref().map(|u|u.id)).bind(owner.as_ref().is_some_and(|u|u.role=="admin")).fetch_one(pool).await?;
+    let row:Value=sqlx::query_scalar("SELECT to_jsonb(p) || jsonb_build_object('city',c.name,'state',s.name,'area',a.name,'images',COALESCE((SELECT jsonb_agg(to_jsonb(i) ORDER BY i.position) FROM property_images i WHERE i.property_id=p.id),'[]'::jsonb),'videos',COALESCE((SELECT jsonb_agg(to_jsonb(v) ORDER BY v.position) FROM property_videos v WHERE v.property_id=p.id),'[]'::jsonb),'amenity_ids',COALESCE((SELECT jsonb_agg(pa.amenity_id) FROM property_amenities pa WHERE pa.property_id=p.id),'[]'::jsonb),'amenities',COALESCE((SELECT jsonb_agg(am.name) FROM amenities am JOIN property_amenities pa ON pa.amenity_id=am.id WHERE pa.property_id=p.id),'[]'::jsonb),'agent',jsonb_build_object('id',u.id,'first_name',u.first_name,'last_name',u.last_name,'phone',u.phone,'whatsapp',u.whatsapp,'telegram',u.telegram,'instagram',u.instagram,'agency_name',ap.agency_name,'role',u.role,'verification_status',COALESCE(ap.verification_status,'pending'),'rating',COALESCE((SELECT round(avg(r.rating)::numeric,1) FROM agent_reviews r WHERE r.agent_id=u.id),0),'review_count',(SELECT count(*) FROM agent_reviews r WHERE r.agent_id=u.id))) FROM properties p JOIN cities c ON c.id=p.city_id JOIN states s ON s.id=p.state_id LEFT JOIN areas a ON a.id=p.area_id JOIN users u ON u.id=p.agent_id LEFT JOIN agent_profiles ap ON ap.user_id=u.id WHERE p.slug=$1 AND (p.status='active' OR p.agent_id=$2 OR $3)").bind(slug).bind(owner.as_ref().map(|u|u.id)).bind(owner.as_ref().is_some_and(|u|u.role=="admin")).fetch_one(pool).await?;
     Ok(row)
 }
 pub async fn save(
@@ -214,6 +214,15 @@ pub async fn save(
     body: &Listing,
 ) -> Result<Value, ApiError> {
     body.validate()?;
+    if body.lister_relationship == "authorized_agent"
+        && user.role != "agent"
+        && user.role != "admin"
+    {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "Only an agent account can list on behalf of an owner",
+        ));
+    }
     let mut tx = pool.begin().await?;
     let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cities c WHERE c.id=$1 AND c.state_id=$2 AND ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM areas a WHERE a.id=$3 AND a.city_id=c.id)))").bind(body.city_id).bind(body.state_id).bind(body.area_id).fetch_one(&mut *tx).await?;
     if !valid {
@@ -336,7 +345,7 @@ pub async fn save(
             .collect::<String>(),
         id
     );
-    let saved_slug:String=sqlx::query_scalar("INSERT INTO properties(id,agent_id,title,slug,description,listing_type,property_type,price,rental_period,bedrooms,bathrooms,size_sqm,state_id,city_id,area_id,address) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,description=EXCLUDED.description,listing_type=EXCLUDED.listing_type,property_type=EXCLUDED.property_type,price=EXCLUDED.price,rental_period=EXCLUDED.rental_period,bedrooms=EXCLUDED.bedrooms,bathrooms=EXCLUDED.bathrooms,size_sqm=EXCLUDED.size_sqm,state_id=EXCLUDED.state_id,city_id=EXCLUDED.city_id,area_id=EXCLUDED.area_id,address=EXCLUDED.address,is_verified=false,updated_at=now() RETURNING slug").bind(id).bind(user.id).bind(body.title.trim()).bind(slug).bind(body.description.trim()).bind(&body.listing_type).bind(&body.property_type).bind(body.price).bind(&body.rental_period).bind(body.bedrooms).bind(body.bathrooms).bind(body.size_sqm).bind(body.state_id).bind(body.city_id).bind(body.area_id).bind(&body.address).fetch_one(&mut *tx).await?;
+    let saved_slug:String=sqlx::query_scalar("INSERT INTO properties(id,agent_id,title,slug,description,listing_type,lister_relationship,property_type,price,rental_period,bedrooms,bathrooms,size_sqm,state_id,city_id,area_id,address) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,description=EXCLUDED.description,listing_type=EXCLUDED.listing_type,lister_relationship=EXCLUDED.lister_relationship,property_type=EXCLUDED.property_type,price=EXCLUDED.price,rental_period=EXCLUDED.rental_period,bedrooms=EXCLUDED.bedrooms,bathrooms=EXCLUDED.bathrooms,size_sqm=EXCLUDED.size_sqm,state_id=EXCLUDED.state_id,city_id=EXCLUDED.city_id,area_id=EXCLUDED.area_id,address=EXCLUDED.address,is_verified=false,updated_at=now() RETURNING slug").bind(id).bind(user.id).bind(body.title.trim()).bind(slug).bind(body.description.trim()).bind(&body.listing_type).bind(&body.lister_relationship).bind(&body.property_type).bind(body.price).bind(&body.rental_period).bind(body.bedrooms).bind(body.bathrooms).bind(body.size_sqm).bind(body.state_id).bind(body.city_id).bind(body.area_id).bind(&body.address).fetch_one(&mut *tx).await?;
     sqlx::query("DELETE FROM property_images WHERE property_id=$1")
         .bind(id)
         .execute(&mut *tx)

@@ -26,6 +26,41 @@ pub async fn profile(req: HttpRequest, pool: web::Data<PgPool>) -> Result<HttpRe
             .await?;
     Ok(HttpResponse::Ok().json(data))
 }
+
+pub async fn public_profile(
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let data: Option<Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object(
+            'id',u.id,'first_name',u.first_name,'last_name',u.last_name,
+            'agency_name',a.agency_name,'bio',a.bio,'profile_image_url',a.profile_image_url,
+            'verification_status',a.verification_status,
+            'rating',COALESCE((SELECT round(avg(r.rating)::numeric,1) FROM agent_reviews r WHERE r.agent_id=u.id),0),
+            'review_count',(SELECT count(*) FROM agent_reviews r WHERE r.agent_id=u.id),
+            'completed_inspections',(SELECT count(*) FROM inspections i WHERE i.agent_id=u.id AND i.status='completed'),
+            'active_properties',(SELECT count(*) FROM properties p WHERE p.agent_id=u.id AND p.status='active'),
+            'member_since',u.created_at,
+            'reviews',COALESCE((SELECT jsonb_agg(recent.review ORDER BY recent.created_at DESC) FROM (
+                SELECT jsonb_build_object(
+                    'id',r.id,'rating',r.rating,'communication',r.communication,
+                    'punctuality',r.punctuality,'property_accuracy',r.property_accuracy,
+                    'professionalism',r.professionalism,'comment',r.comment,'created_at',r.created_at,
+                    'reviewer_name',reviewer.first_name || ' ' || left(reviewer.last_name,1) || '.'
+                ) AS review,r.created_at
+                FROM agent_reviews r JOIN users reviewer ON reviewer.id=r.reviewer_id
+                WHERE r.agent_id=u.id ORDER BY r.created_at DESC LIMIT 20
+            ) recent),'[]'::jsonb)
+        )
+        FROM users u JOIN agent_profiles a ON a.user_id=u.id
+        WHERE u.id=$1 AND u.role='agent' AND u.is_active",
+    )
+    .bind(*id)
+    .fetch_optional(pool.get_ref())
+    .await?;
+    let data = data.ok_or(ApiError(StatusCode::NOT_FOUND, "Agent profile not found"))?;
+    Ok(HttpResponse::Ok().json(data))
+}
 #[derive(Deserialize)]
 pub struct Profile {
     agency_name: String,
@@ -47,5 +82,6 @@ pub async fn update(
 }
 pub fn routes(cfg: &mut web::ServiceConfig) {
     cfg.route("/agent/profile", web::get().to(profile))
-        .route("/agent/profile", web::put().to(update));
+        .route("/agent/profile", web::put().to(update))
+        .route("/agents/{id}", web::get().to(public_profile));
 }

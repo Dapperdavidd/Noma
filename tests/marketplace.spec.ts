@@ -6,7 +6,8 @@ import {
   request,
   type APIRequestContext,
 } from "@playwright/test";
-const baseURL = "http://127.0.0.1:8081/api/v1";
+const apiOrigin = "http://127.0.0.1:18081";
+const baseURL = `${apiOrigin}/api/v1`;
 const origin = "http://localhost:5174";
 const database =
   process.env.TEST_DATABASE_URL ||
@@ -242,7 +243,7 @@ test("ownership, publishing, search, favorites, inquiries and session revocation
   expect(details.headers()["x-request-id"]).toMatch(
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
   );
-  const ready = await anonymous.get("http://127.0.0.1:8081/ready");
+  const ready = await anonymous.get(`${apiOrigin}/ready`);
   expect(ready.status()).toBe(200);
   expect(await ready.json()).toEqual({ status: "ready" });
   const payload = await details.json();
@@ -554,6 +555,16 @@ test("homepage and mobile search remain usable", async ({ page }) => {
     .getByRole("link", { name: "Rent", exact: true })
     .click();
   await expect(page).toHaveURL(/listing_type=rent/);
+  await expect(
+    page.getByRole("button", { name: "Buy", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Short let", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Buy", exact: true }).click();
+  await expect(page).toHaveURL(/listing_type=sale/);
+  await page.getByRole("button", { name: "Rent", exact: true }).click();
+  await expect(page).toHaveURL(/listing_type=rent/);
   await page.getByRole("button", { name: /More filters/ }).click();
   await page
     .getByRole("combobox", { name: "State", exact: true })
@@ -796,6 +807,127 @@ test("agent profiles, amenities, inquiry statuses and administrator boundaries",
   ).toBe(204);
   await owner.client.dispose();
   await seeker.client.dispose();
+});
+
+test("completed inspections produce verified agent reviews", async () => {
+  const agent = await account("agent");
+  const seeker = await account("user");
+  const outsider = await account("user");
+  await agent.client.put(`${baseURL}/agent/profile`, {
+    data: {
+      agency_name: "Trusted Keys Nigeria",
+      bio: "Helping customers inspect well-described homes across Lagos.",
+    },
+  });
+  const created = await agent.client.post(`${baseURL}/properties`, {
+    data: {
+      ...listing(`Inspection home ${crypto.randomUUID()}`),
+      lister_relationship: "authorized_agent",
+    },
+  });
+  expect(created.status(), await created.text()).toBe(200);
+  const property = await created.json();
+  await agent.client.patch(`${baseURL}/properties/${property.id}/status`, {
+    data: { status: "active" },
+  });
+  const requested = await seeker.client.post(
+    `${baseURL}/properties/${property.id}/inspections`,
+    {
+      data: {
+        proposed_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        note: "I would like to inspect the property with the listing agent.",
+      },
+    },
+  );
+  expect(requested.status(), await requested.text()).toBe(201);
+  const inspection = await requested.json();
+  expect(
+    (
+      await outsider.client.post(
+        `${baseURL}/inspections/${inspection.id}/review`,
+        {
+          data: {
+            rating: 5,
+            communication: 5,
+            punctuality: 5,
+            property_accuracy: 5,
+            professionalism: 5,
+            comment: "This account did not attend the inspection.",
+          },
+        },
+      )
+    ).status(),
+  ).toBe(403);
+  expect(
+    (
+      await agent.client.patch(`${baseURL}/inspections/${inspection.id}`, {
+        data: { status: "confirmed" },
+      })
+    ).status(),
+  ).toBe(204);
+  databaseCommand(
+    `UPDATE inspections SET proposed_at=now()-interval '1 hour' WHERE id='${inspection.id}'`,
+  );
+  expect(
+    (
+      await agent.client.patch(`${baseURL}/inspections/${inspection.id}`, {
+        data: { status: "completed" },
+      })
+    ).status(),
+  ).toBe(204);
+  const review = {
+    rating: 5,
+    communication: 5,
+    punctuality: 4,
+    property_accuracy: 5,
+    professionalism: 5,
+    comment: "The agent arrived prepared and the property matched the listing.",
+  };
+  expect(
+    (
+      await seeker.client.post(
+        `${baseURL}/inspections/${inspection.id}/review`,
+        { data: review },
+      )
+    ).status(),
+  ).toBe(201);
+  expect(
+    (
+      await seeker.client.post(
+        `${baseURL}/inspections/${inspection.id}/review`,
+        { data: review },
+      )
+    ).status(),
+  ).toBe(409);
+  const profile = await (
+    await seeker.client.get(`${baseURL}/agents/${agent.user.id}`)
+  ).json();
+  expect(Number(profile.rating)).toBe(5);
+  expect(Number(profile.review_count)).toBe(1);
+  expect(profile.completed_inspections).toBe(1);
+  expect(profile.reviews[0].reviewer_name).toBe("Noma T.");
+  const details = await (
+    await seeker.client.get(`${baseURL}/properties/${property.slug}`)
+  ).json();
+  expect(details.lister_relationship).toBe("authorized_agent");
+  expect(Number(details.agent.rating)).toBe(5);
+  expect(Number(details.agent.review_count)).toBe(1);
+  expect(
+    (await seeker.client.get(`${baseURL}/dashboard/inspections`)).status(),
+  ).toBe(200);
+  expect(
+    (
+      await outsider.client.post(`${baseURL}/properties`, {
+        data: {
+          ...listing("Unauthorized agent relationship"),
+          lister_relationship: "authorized_agent",
+        },
+      })
+    ).status(),
+  ).toBe(403);
+  await agent.client.dispose();
+  await seeker.client.dispose();
+  await outsider.client.dispose();
 });
 
 test("administrator review is audited and verification stays independent", async () => {

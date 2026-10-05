@@ -4,8 +4,10 @@ import { ArrowRight, ArrowLeft, X } from "lucide-react";
 import { api, type Property, type Location } from "../api";
 import { uploadPhoto, uploadVideo, type ManagedUpload } from "../uploads";
 import { Notice } from "../components";
+import { useAuth } from "../auth";
 
 export function ListingForm() {
+  const { user } = useAuth();
   const { slug } = useParams();
   const [amenities, setAmenities] = useState<{ id: string; name: string }[]>(
     [],
@@ -217,11 +219,18 @@ export function ListingForm() {
               placeholder="e.g. A bright 3-bedroom apartment in Ikoyi"
             />
           </label>
-          <input type="hidden" name="listing_type" value={type} />
           <div className="form-row">
             <label>
               Listing type
-              <input value="For rent" disabled />
+              <select
+                name="listing_type"
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+              >
+                <option value="sale">For sale</option>
+                <option value="rent">For rent</option>
+                <option value="short_let">Short let</option>
+              </select>
             </label>
             <label>
               Property type
@@ -239,6 +248,26 @@ export function ListingForm() {
               </select>
             </label>
           </div>
+          {user?.role === "agent" || user?.role === "admin" ? (
+            <label>
+              Your relationship to this property
+              <select
+                name="lister_relationship"
+                defaultValue={p?.lister_relationship || "authorized_agent"}
+              >
+                <option value="authorized_agent">
+                  I am an agent authorized by the owner
+                </option>
+                <option value="owner">I own this property</option>
+              </select>
+              <span className="field-help">
+                By publishing, you confirm you have permission to advertise this
+                property.
+              </span>
+            </label>
+          ) : (
+            <input type="hidden" name="lister_relationship" value="owner" />
+          )}
           <label>
             Description
             <textarea
