@@ -29,18 +29,19 @@ pub async fn create(
     {
         return Err(bad("Choose an inspection time within the next 180 days"));
     }
-    let agent_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT p.agent_id FROM properties p JOIN users u ON u.id=p.agent_id WHERE p.id=$1 AND p.status='active' AND u.role='agent' AND p.agent_id<>$2",
+    let listing: Option<(Uuid, String)> = sqlx::query_as(
+        "SELECT p.agent_id,p.title FROM properties p JOIN users u ON u.id=p.agent_id WHERE p.id=$1 AND p.status='active' AND u.role='agent' AND p.agent_id<>$2",
     )
     .bind(*property_id)
     .bind(user.id)
     .fetch_optional(pool.get_ref())
     .await?;
-    let agent_id = agent_id.ok_or(ApiError(
+    let (agent_id, property_title) = listing.ok_or(ApiError(
         StatusCode::BAD_REQUEST,
         "Inspections can only be requested for an active agent listing",
     ))?;
     let id = Uuid::new_v4();
+    let mut tx = pool.begin().await?;
     sqlx::query("INSERT INTO inspections(id,property_id,seeker_id,agent_id,proposed_at,note) VALUES($1,$2,$3,$4,$5,$6)")
         .bind(id)
         .bind(*property_id)
@@ -48,8 +49,21 @@ pub async fn create(
         .bind(agent_id)
         .bind(body.proposed_at)
         .bind(body.note.trim())
-        .execute(pool.get_ref())
+        .execute(&mut *tx)
         .await?;
+    sqlx::query(
+        "INSERT INTO notifications(id,user_id,kind,title,body,href)
+         VALUES($1,$2,'inspection_requested','New inspection request',$3,'/dashboard?tab=inspections')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(agent_id)
+    .bind(format!(
+        "{} {} requested an inspection for {property_title}",
+        user.first_name, user.last_name
+    ))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
     Ok(HttpResponse::Created().json(json!({"id": id})))
 }
 
@@ -91,13 +105,15 @@ pub async fn update(
 ) -> Result<HttpResponse, ApiError> {
     let user = auth::current(&req, &pool).await?;
     let mut tx = pool.begin().await?;
-    let row: Option<(Uuid, Uuid, String, DateTime<Utc>)> = sqlx::query_as(
-        "SELECT agent_id,seeker_id,status,proposed_at FROM inspections WHERE id=$1 FOR UPDATE",
+    let row: Option<(Uuid, Uuid, String, DateTime<Utc>, String)> = sqlx::query_as(
+        "SELECT i.agent_id,i.seeker_id,i.status,i.proposed_at,p.title
+         FROM inspections i JOIN properties p ON p.id=i.property_id
+         WHERE i.id=$1 FOR UPDATE OF i",
     )
     .bind(*id)
     .fetch_optional(&mut *tx)
     .await?;
-    let (agent_id, seeker_id, current, proposed_at) = row.ok_or(ApiError(
+    let (agent_id, seeker_id, current, proposed_at, property_title) = row.ok_or(ApiError(
         StatusCode::NOT_FOUND,
         "Inspection request not found",
     ))?;
@@ -133,6 +149,23 @@ pub async fn update(
         .bind(*id)
         .execute(&mut *tx)
         .await?;
+    let recipient = if user.id == agent_id {
+        seeker_id
+    } else {
+        agent_id
+    };
+    sqlx::query(
+        "INSERT INTO notifications(id,user_id,kind,title,body,href)
+         VALUES($1,$2,'inspection_updated','Inspection updated',$3,'/dashboard?tab=inspections')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(recipient)
+    .bind(format!(
+        "The inspection for {property_title} is now {}",
+        body.status
+    ))
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(HttpResponse::NoContent().finish())
 }
@@ -179,6 +212,7 @@ pub async fn review(
         StatusCode::FORBIDDEN,
         "Only the customer from a completed inspection can review this agent",
     ))?;
+    let mut tx = pool.begin().await?;
     sqlx::query("INSERT INTO agent_reviews(id,inspection_id,agent_id,reviewer_id,rating,communication,punctuality,property_accuracy,professionalism,comment) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
         .bind(Uuid::new_v4())
         .bind(*id)
@@ -190,8 +224,19 @@ pub async fn review(
         .bind(body.property_accuracy)
         .bind(body.professionalism)
         .bind(body.comment.trim())
-        .execute(pool.get_ref())
+        .execute(&mut *tx)
         .await?;
+    sqlx::query(
+        "INSERT INTO notifications(id,user_id,kind,title,body,href)
+         VALUES($1,$2,'review_received','New customer review',$3,$4)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(agent_id)
+    .bind(format!("You received a {}-star review", body.rating))
+    .bind(format!("/agents/{agent_id}"))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
     Ok(HttpResponse::Created().finish())
 }
 

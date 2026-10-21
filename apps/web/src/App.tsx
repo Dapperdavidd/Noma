@@ -16,6 +16,7 @@ import { ListingForm } from "./pages/ListingForm";
 import { Saved } from "./pages/Saved";
 import { Discover } from "./pages/Discover";
 import { PublicAgentProfile } from "./pages/PublicAgentProfile";
+import { Notifications } from "./pages/Notifications";
 import {
   ForgotPassword,
   ResetPassword,
@@ -50,6 +51,20 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/discover" element={<Discover />} />
+        <Route
+          path="/notifications"
+          element={
+            <>
+              <Header />
+              <Protected>
+                <main className="section">
+                  <Notifications />
+                </main>
+              </Protected>
+              <Footer />
+            </>
+          }
+        />
         <Route
           path="/account"
           element={

@@ -82,13 +82,28 @@ pub async fn inquire(
     if !exists {
         return Err(bad("You cannot inquire about this listing"));
     }
+    let mut tx = pool.begin().await?;
+    let inquiry_id = Uuid::new_v4();
     sqlx::query("INSERT INTO inquiries(id,property_id,user_id,message) VALUES($1,$2,$3,$4)")
-        .bind(Uuid::new_v4())
+        .bind(inquiry_id)
         .bind(*id)
         .bind(user.id)
         .bind(body.message.trim())
-        .execute(pool.get_ref())
+        .execute(&mut *tx)
         .await?;
+    sqlx::query(
+        "INSERT INTO notifications(id,user_id,kind,title,body,href)
+         SELECT $1,p.agent_id,'inquiry_received','New property inquiry',
+                $2 || ' sent an inquiry about ' || p.title,
+                '/dashboard?tab=inquiries'
+         FROM properties p WHERE p.id=$3",
+    )
+    .bind(Uuid::new_v4())
+    .bind(format!("{} {}", user.first_name, user.last_name))
+    .bind(*id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
     Ok(HttpResponse::Created().finish())
 }
 pub async fn leads(
@@ -212,13 +227,36 @@ pub async fn lead_status(
     if !["new", "contacted", "closed"].contains(&body.status.as_str()) {
         return Err(bad("Invalid inquiry status"));
     }
-    let result=sqlx::query("UPDATE inquiries i SET status=$1 FROM properties p WHERE i.property_id=p.id AND i.id=$2 AND p.agent_id=$3").bind(&body.status).bind(*id).bind(user.id).execute(pool.get_ref()).await?;
-    if result.rows_affected() == 0 {
+    let mut tx = pool.begin().await?;
+    let updated: Option<(Uuid, String)> = sqlx::query_as(
+        "UPDATE inquiries i SET status=$1 FROM properties p
+         WHERE i.property_id=p.id AND i.id=$2 AND p.agent_id=$3
+         RETURNING i.user_id,p.title",
+    )
+    .bind(&body.status)
+    .bind(*id)
+    .bind(user.id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some((recipient, property)) = updated else {
         return Err(ApiError(
             actix_web::http::StatusCode::NOT_FOUND,
             "Inquiry not found",
         ));
-    }
+    };
+    sqlx::query(
+        "INSERT INTO notifications(id,user_id,kind,title,body,href)
+         VALUES($1,$2,'inquiry_updated','Inquiry updated',$3,'/dashboard?tab=inquiries')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(recipient)
+    .bind(format!(
+        "Your inquiry about {property} is now {}",
+        body.status
+    ))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
     Ok(HttpResponse::NoContent().finish())
 }
 pub fn routes(cfg: &mut web::ServiceConfig) {

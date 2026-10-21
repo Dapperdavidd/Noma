@@ -306,6 +306,48 @@ test("ownership, publishing, search, favorites, inquiries and session revocation
     if (!inquiryCursor) break;
   }
   expect(new Set(inquiryIds).size).toBe(3);
+  const ownerNotifications = await (
+    await owner.client.get(`${baseURL}/notifications`)
+  ).json();
+  expect(ownerNotifications.unread).toBe(3);
+  expect(ownerNotifications.data).toHaveLength(3);
+  expect(ownerNotifications.data[0].kind).toBe("inquiry_received");
+  expect(
+    (
+      await other.client.patch(
+        `${baseURL}/notifications/${ownerNotifications.data[0].id}/read`,
+      )
+    ).status(),
+  ).toBe(400);
+  expect(
+    (
+      await owner.client.patch(
+        `${baseURL}/notifications/${ownerNotifications.data[0].id}/read`,
+      )
+    ).status(),
+  ).toBe(204);
+  expect(
+    await (await owner.client.get(`${baseURL}/notifications/unread`)).json(),
+  ).toEqual({ unread: 2 });
+  expect(
+    (await owner.client.post(`${baseURL}/notifications/read-all`)).status(),
+  ).toBe(204);
+  expect(
+    await (await owner.client.get(`${baseURL}/notifications/unread`)).json(),
+  ).toEqual({ unread: 0 });
+  expect(
+    (
+      await owner.client.patch(
+        `${baseURL}/dashboard/inquiries/${inquiryIds[0]}`,
+        { data: { status: "contacted" } },
+      )
+    ).status(),
+  ).toBe(204);
+  const seekerNotifications = await (
+    await seeker.client.get(`${baseURL}/notifications`)
+  ).json();
+  expect(seekerNotifications.unread).toBe(1);
+  expect(seekerNotifications.data[0].kind).toBe("inquiry_updated");
   expect(
     await (await owner.client.get(`${baseURL}/dashboard/summary`)).json(),
   ).toEqual({
@@ -841,6 +883,10 @@ test("completed inspections produce verified agent reviews", async () => {
   );
   expect(requested.status(), await requested.text()).toBe(201);
   const inspection = await requested.json();
+  const requestedNotification = await (
+    await agent.client.get(`${baseURL}/notifications`)
+  ).json();
+  expect(requestedNotification.data[0].kind).toBe("inspection_requested");
   expect(
     (
       await outsider.client.post(
@@ -865,6 +911,10 @@ test("completed inspections produce verified agent reviews", async () => {
       })
     ).status(),
   ).toBe(204);
+  expect(
+    (await (await seeker.client.get(`${baseURL}/notifications`)).json()).data[0]
+      .kind,
+  ).toBe("inspection_updated");
   databaseCommand(
     `UPDATE inspections SET proposed_at=now()-interval '1 hour' WHERE id='${inspection.id}'`,
   );
@@ -891,6 +941,10 @@ test("completed inspections produce verified agent reviews", async () => {
       )
     ).status(),
   ).toBe(201);
+  expect(
+    (await (await agent.client.get(`${baseURL}/notifications`)).json()).data[0]
+      .kind,
+  ).toBe("review_received");
   expect(
     (
       await seeker.client.post(

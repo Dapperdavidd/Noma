@@ -7,6 +7,7 @@ mod error;
 mod google_auth;
 mod images;
 mod inspections;
+mod notifications;
 mod observability;
 mod pagination;
 mod properties;
@@ -192,6 +193,7 @@ async fn main() -> std::io::Result<()> {
                     .configure(community::routes)
                     .configure(images::routes)
                     .configure(inspections::routes)
+                    .configure(notifications::routes)
                     .configure(agents::routes)
                     .configure(admin::routes),
             )

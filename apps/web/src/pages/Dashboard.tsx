@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   ArrowUpRight,
   Plus,
@@ -38,6 +38,7 @@ type Inspection = {
   other_party: { id: string; name: string };
 };
 export function Dashboard() {
+  const [params, setParams] = useSearchParams();
   const { user } = useAuth();
   const [items, setItems] = useState<Property[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -51,7 +52,18 @@ export function Dashboard() {
   });
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState("properties");
+  const requestedTab = params.get("tab");
+  const [tab, setTab] = useState(
+    ["properties", "inquiries", "inspections"].includes(requestedTab || "")
+      ? requestedTab!
+      : "properties",
+  );
+  function selectTab(value: string) {
+    setTab(value);
+    const next = new URLSearchParams(params);
+    next.set("tab", value);
+    setParams(next, { replace: true });
+  }
   async function load() {
     try {
       const [p, l, totals, visits] = await Promise.all([
@@ -161,19 +173,19 @@ export function Dashboard() {
       <div className="dashboard-tabs">
         <button
           className={tab === "properties" ? "active" : ""}
-          onClick={() => setTab("properties")}
+          onClick={() => selectTab("properties")}
         >
           Your properties
         </button>
         <button
           className={tab === "inquiries" ? "active" : ""}
-          onClick={() => setTab("inquiries")}
+          onClick={() => selectTab("inquiries")}
         >
           Inquiries
         </button>
         <button
           className={tab === "inspections" ? "active" : ""}
-          onClick={() => setTab("inspections")}
+          onClick={() => selectTab("inspections")}
         >
           Inspections
         </button>

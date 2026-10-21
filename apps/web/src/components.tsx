@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, NavLink, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowRight,
@@ -13,6 +13,7 @@ import {
   LogOut,
   BadgeCheck,
   Video,
+  Bell,
 } from "lucide-react";
 import { api, money, type Property } from "./api";
 import { hero } from "./demo";
@@ -28,7 +29,17 @@ export function Notice({ children }: { children: ReactNode }) {
 export function Header({ overlay = false }: { overlay?: boolean }) {
   const { user, refresh } = useAuth();
   const [open, setOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
   const navigate = useNavigate();
+  useEffect(() => {
+    if (!user) {
+      setUnread(0);
+      return;
+    }
+    api<{ unread: number }>("/notifications/unread")
+      .then((value) => setUnread(value.unread))
+      .catch(() => setUnread(0));
+  }, [user]);
   return (
     <header className={`header ${overlay ? "overlay" : ""}`}>
       <Link className="logo" to="/" aria-label="NOMA home">
@@ -56,6 +67,18 @@ export function Header({ overlay = false }: { overlay?: boolean }) {
               aria-label="Saved properties"
             >
               <Heart size={19} />
+            </Link>
+            <Link
+              className="icon-button notification-button"
+              to="/notifications"
+              aria-label={`${unread} unread notification${unread === 1 ? "" : "s"}`}
+            >
+              <Bell size={19} />
+              {unread > 0 && (
+                <span className="notification-count">
+                  {unread > 99 ? "99+" : unread}
+                </span>
+              )}
             </Link>
             <Link to="/account" className="sign-in">
               Hi, {user.first_name}
