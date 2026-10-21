@@ -32,6 +32,8 @@ pub async fn metrics(req: HttpRequest, pool: web::Data<PgPool>) -> Result<HttpRe
           'properties_updated_today',(SELECT count(*) FROM properties WHERE updated_at>=current_date),
           'photos_uploaded_today',(SELECT count(*) FROM image_uploads WHERE resource_type='image' AND created_at>=current_date),
           'videos_uploaded_today',(SELECT count(*) FROM image_uploads WHERE resource_type='video' AND created_at>=current_date),
+          'successful_payments',(SELECT count(*) FROM billing_purchases WHERE status='succeeded'),
+          'revenue_kobo',(SELECT COALESCE(sum(amount_kobo),0) FROM billing_purchases WHERE status='succeeded'),
           'open_reports',(SELECT count(*) FROM property_reports WHERE status='open'))",
     )
     .fetch_one(pool.get_ref())

@@ -7,6 +7,7 @@ import {
   MessageCircle,
   CalendarCheck,
   Star,
+  Sparkles,
 } from "lucide-react";
 import { api, money, type Property } from "../api";
 import { hero } from "../demo";
@@ -145,6 +146,9 @@ export function Dashboard() {
         </Link>
       </div>
       <div className="dashboard-links">
+        <Link className="text-link" to="/billing">
+          Plans and promotion <ArrowUpRight size={15} />
+        </Link>
         {(user?.role === "agent" || user?.role === "admin") && (
           <Link className="text-link" to="/dashboard/profile">
             Edit agent profile <ArrowUpRight size={15} />
@@ -210,6 +214,14 @@ export function Dashboard() {
                   <Link className="text-link" to={`/dashboard/edit/${p.slug}`}>
                     Edit <ArrowUpRight size={15} />
                   </Link>
+                  {p.status === "active" && (
+                    <Link
+                      className="text-link"
+                      to={`/billing?property=${p.id}`}
+                    >
+                      Promote <Sparkles size={15} />
+                    </Link>
+                  )}
                   <select
                     aria-label={`Status of ${p.title}`}
                     value={p.status}

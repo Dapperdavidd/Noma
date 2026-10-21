@@ -1,0 +1,2 @@
+ALTER TABLE billing_purchases
+DROP CONSTRAINT billing_purchases_check;

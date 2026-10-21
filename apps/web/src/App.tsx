@@ -17,6 +17,7 @@ import { Saved } from "./pages/Saved";
 import { Discover } from "./pages/Discover";
 import { PublicAgentProfile } from "./pages/PublicAgentProfile";
 import { Notifications } from "./pages/Notifications";
+import { Billing } from "./pages/Billing";
 import {
   ForgotPassword,
   ResetPassword,
@@ -59,6 +60,20 @@ export default function App() {
               <Protected>
                 <main className="section">
                   <Notifications />
+                </main>
+              </Protected>
+              <Footer />
+            </>
+          }
+        />
+        <Route
+          path="/billing"
+          element={
+            <>
+              <Header />
+              <Protected>
+                <main className="section">
+                  <Billing />
                 </main>
               </Protected>
               <Footer />

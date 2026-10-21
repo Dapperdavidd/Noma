@@ -2419,6 +2419,49 @@ form .amenity-picker input {
   color: #858b82;
   font-size: 11px;
 }
+.billing-heading {
+  margin-top: 10px;
+}
+.billing-products {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin: 36px 0 58px;
+}
+.billing-products > article {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 30px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f7f6ef;
+}
+.billing-products h2,
+.billing-products p {
+  margin: 0;
+}
+.billing-products > article > strong {
+  margin: 8px 0;
+  font-family: var(--serif);
+  font-size: 34px;
+  font-weight: 400;
+}
+.billing-products label {
+  width: 100%;
+}
+.billing-products .button {
+  margin-top: auto;
+}
+.billing-history {
+  max-width: 900px;
+}
+@media (max-width: 700px) {
+  .billing-products {
+    grid-template-columns: 1fr;
+  }
+}
 @media (max-width: 1100px) {
   .admin-overview {
     grid-template-columns: repeat(3, minmax(0, 1fr));

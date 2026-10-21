@@ -1,6 +1,7 @@
 mod admin;
 mod agents;
 mod auth;
+mod billing;
 mod community;
 mod email;
 mod error;
@@ -85,6 +86,7 @@ async fn main() -> std::io::Result<()> {
     tracing::info!(%bind,"NOMA API starting");
     let limiter = web::Data::new(security::RateLimiter::from_env());
     let email = web::Data::new(email::EmailClient::from_env());
+    let billing = web::Data::new(billing::BillingClient::from_env());
     let google = web::Data::new(google_auth::GoogleVerifier::from_env());
     HttpServer::new(move || {
         let cors_origins = origins.clone();
@@ -93,6 +95,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(pool.clone()))
             .app_data(email.clone())
+            .app_data(billing.clone())
             .app_data(google.clone())
             .app_data(
                 web::JsonConfig::default()
@@ -152,7 +155,9 @@ async fn main() -> std::io::Result<()> {
                         | actix_web::http::Method::HEAD
                         | actix_web::http::Method::OPTIONS
                 );
+                let provider_callback = req.path() == "/api/v1/billing/webhooks/paystack";
                 let valid = safe
+                    || provider_callback
                     || req
                         .headers()
                         .get("origin")
@@ -188,6 +193,7 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope("/api/v1")
                     .configure(auth::routes)
+                    .configure(billing::routes)
                     .configure(properties::routes)
                     .configure(reports::routes)
                     .configure(community::routes)

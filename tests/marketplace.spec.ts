@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import {
   test,
   expect,
@@ -172,6 +172,103 @@ test("email verification and password recovery tokens are single-use", async () 
       })
     ).status(),
   ).toBe(400);
+});
+
+test("billing catalog, webhook settlement and benefits are secure and idempotent", async () => {
+  const agent = await account("agent");
+  const seeker = await account("user");
+  const anonymous = await request.newContext({ baseURL });
+
+  const agentCatalog = await (
+    await agent.client.get(`${baseURL}/billing/products`)
+  ).json();
+  expect(agentCatalog.enabled).toBe(true);
+  expect(agentCatalog.data.map((product: any) => product.id)).toEqual([
+    "featured_listing_30d",
+    "agent_pro_monthly",
+  ]);
+
+  const seekerCatalog = await (
+    await seeker.client.get(`${baseURL}/billing/products`)
+  ).json();
+  expect(seekerCatalog.data.map((product: any) => product.id)).toEqual([
+    "featured_listing_30d",
+  ]);
+  expect(
+    await (await agent.client.get(`${baseURL}/billing/purchases`)).json(),
+  ).toEqual([]);
+  expect(
+    (
+      await seeker.client.post(`${baseURL}/billing/checkout`, {
+        data: { product_id: "agent_pro_monthly", property_id: null },
+      })
+    ).status(),
+  ).toBe(403);
+
+  const property = await create(
+    agent.client,
+    `Billing property ${crypto.randomUUID()}`,
+  );
+  expect(
+    (
+      await agent.client.patch(`${baseURL}/properties/${property.id}/status`, {
+        data: { status: "active" },
+      })
+    ).status(),
+  ).toBe(204);
+  const reference = `noma-test-${crypto.randomUUID()}`;
+  const purchaseId = crypto.randomUUID();
+  databaseCommand(
+    `INSERT INTO billing_purchases(id,user_id,product_id,property_id,provider_reference,amount_kobo) VALUES('${purchaseId}','${agent.user.id}','featured_listing_30d','${property.id}','${reference}',500000)`,
+  );
+  const event = JSON.stringify({
+    event: "charge.success",
+    data: { reference, amount: 500000, currency: "NGN" },
+  });
+  const signature = createHmac("sha512", "sk_test_noma_integration")
+    .update(event)
+    .digest("hex");
+  const settle = () =>
+    anonymous.post(`${baseURL}/billing/webhooks/paystack`, {
+      data: Buffer.from(event),
+      headers: {
+        "content-type": "application/json",
+        "x-paystack-signature": signature,
+      },
+    });
+  expect((await settle()).status()).toBe(200);
+  expect(
+    databaseCommand(
+      `SELECT status FROM billing_purchases WHERE id='${purchaseId}'`,
+    ),
+  ).toBe("succeeded");
+  const firstExpiry = databaseCommand(
+    `SELECT featured_until FROM properties WHERE id='${property.id}'`,
+  );
+  expect(firstExpiry).not.toBe("");
+  expect((await settle()).status()).toBe(200);
+  expect(
+    databaseCommand(
+      `SELECT featured_until FROM properties WHERE id='${property.id}'`,
+    ),
+  ).toBe(firstExpiry);
+  expect(
+    (await (await agent.client.get(`${baseURL}/billing/purchases`)).json())[0]
+      .status,
+  ).toBe("succeeded");
+  expect(
+    (
+      await anonymous.post(`${baseURL}/billing/webhooks/paystack`, {
+        data: { event: "charge.success" },
+      })
+    ).status(),
+  ).toBe(401);
+
+  await Promise.all([
+    agent.client.dispose(),
+    seeker.client.dispose(),
+    anonymous.dispose(),
+  ]);
 });
 test("ownership, publishing, search, favorites, inquiries and session revocation", async () => {
   const owner = await account();

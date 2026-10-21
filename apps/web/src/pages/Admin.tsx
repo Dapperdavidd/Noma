@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { api, type Property } from "../api";
+import { api, money, type Property } from "../api";
 import { Notice } from "../components";
 import { useAuth } from "../auth";
 type Agent = { id: string; name: string; agency_name: string | null };
@@ -24,6 +24,8 @@ type Metrics = {
   properties_updated_today: number;
   photos_uploaded_today: number;
   videos_uploaded_today: number;
+  successful_payments: number;
+  revenue_kobo: number;
   open_reports: number;
 };
 export function Admin() {
@@ -161,6 +163,8 @@ export function Admin() {
             ["Properties updated today", metrics.properties_updated_today],
             ["Photos uploaded today", metrics.photos_uploaded_today],
             ["Videos uploaded today", metrics.videos_uploaded_today],
+            ["Successful payments", metrics.successful_payments],
+            ["Gross payment volume", money(metrics.revenue_kobo / 100)],
             ["Open reports", metrics.open_reports],
           ].map(([label, value]) => (
             <article key={label}>

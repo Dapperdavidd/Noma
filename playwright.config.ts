@@ -51,6 +51,7 @@ export default defineConfig({
         CLOUDINARY_UPLOAD_PRESET: "",
         GOOGLE_CLIENT_ID: "",
         RESEND_API_KEY: "",
+        PAYSTACK_SECRET_KEY: "sk_test_noma_integration",
         API_BIND: "127.0.0.1:18081",
         WEB_ORIGINS: "http://localhost:5174,http://127.0.0.1:5174",
         COOKIE_SECURE: "false",

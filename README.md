@@ -67,6 +67,10 @@ Each signed upload creates a short-lived database intent. After the browser uplo
 
 The `/admin` operations dashboard is available only to database-provisioned administrators. It reports user, session, property, daily media and moderation counts and includes the review queues. Public registration cannot create administrators. Provision the initial trusted account with an audited database operation after it has registered; no default admin password exists. Property and agent verification are separate, featured placement is time-limited, and every review action records an actor and reason. Agents can edit their professional profiles at `/dashboard/profile`; public agent profiles expose reputation without revealing private account details. Every user can manage listings, inquiries, inspections and eligible reviews in the property dashboard.
 
+## Billing
+
+The billing foundation uses Paystack-hosted checkout, a server-created purchase reference and a durable local ledger. Set `PAYSTACK_SECRET_KEY` to a Paystack test secret to open paid plans. Successful benefits are activated only after server verification or a valid HMAC-signed `charge.success` webhook whose reference, amount and currency match the stored purchase. Repeated callbacks are idempotent. The browser never receives the secret key and cannot mark its own purchase successful. Configure the Paystack webhook URL as `https://your-app.example/api/v1/billing/webhooks/paystack`. Keep test mode enabled until pricing, refunds, business verification and customer support procedures are approved.
+
 ## Test database and benchmarks
 
 Integration tests create disposable accounts/listings only in `noma_test`, never in `noma_dev`. They start an API on port 18081 and frontend on 5174. Locally, the test runner derives the `noma_test` connection from the private `DATABASE_URL` when it points to `noma_dev`; `TEST_DATABASE_URL` can override it. Install the test browser with `npx playwright install chromium`. CI provisions its own PostgreSQL service and runs these tests automatically. Test fixture data remains in the isolated test database between runs.
