@@ -29,6 +29,10 @@ type PublicProfile = {
   agency_name: string | null;
   bio: string | null;
   profile_image_url: string | null;
+  license_number: string | null;
+  years_experience: number | null;
+  service_areas: string[];
+  website_url: string | null;
   verification_status: string;
   rating: number;
   review_count: number;
@@ -73,8 +77,17 @@ export function PublicAgentProfile() {
           <>
             <section className="agent-hero-card">
               <div className="agent-avatar-large">
-                {profile.first_name[0]}
-                {profile.last_name[0]}
+                {profile.profile_image_url ? (
+                  <img
+                    src={profile.profile_image_url}
+                    alt={`${profile.first_name} ${profile.last_name}`}
+                  />
+                ) : (
+                  <>
+                    {profile.first_name[0]}
+                    {profile.last_name[0]}
+                  </>
+                )}
               </div>
               <div>
                 <div className="eyebrow">NOMA AGENT PROFILE</div>
@@ -85,7 +98,7 @@ export function PublicAgentProfile() {
                 <div className="agent-trust-line">
                   {profile.verification_status === "verified" && (
                     <span>
-                      <BadgeCheck size={16} /> Identity verified
+                      <BadgeCheck size={16} /> NOMA verified agent
                     </span>
                   )}
                   <span>
@@ -118,6 +131,41 @@ export function PublicAgentProfile() {
               <p>
                 {profile.bio || "This agent has not added a biography yet."}
               </p>
+              <dl className="agent-credentials">
+                {profile.years_experience !== null && (
+                  <div>
+                    <dt>Experience</dt>
+                    <dd>{profile.years_experience} years</dd>
+                  </div>
+                )}
+                {!!profile.service_areas.length && (
+                  <div>
+                    <dt>Service areas</dt>
+                    <dd>{profile.service_areas.join(" · ")}</dd>
+                  </div>
+                )}
+                {profile.verification_status === "verified" &&
+                  profile.license_number && (
+                    <div>
+                      <dt>Registration</dt>
+                      <dd>{profile.license_number}</dd>
+                    </div>
+                  )}
+                {profile.website_url && (
+                  <div>
+                    <dt>Website</dt>
+                    <dd>
+                      <a
+                        href={profile.website_url}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        Visit professional website
+                      </a>
+                    </dd>
+                  </div>
+                )}
+              </dl>
             </section>
             <section className="agent-reviews">
               <div className="section-heading">

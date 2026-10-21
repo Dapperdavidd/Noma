@@ -3,7 +3,16 @@ import { Link } from "react-router-dom";
 import { api, money, type Property } from "../api";
 import { Notice } from "../components";
 import { useAuth } from "../auth";
-type Agent = { id: string; name: string; agency_name: string | null };
+type Agent = {
+  id: string;
+  application_id: string;
+  name: string;
+  agency_name: string | null;
+  license_number: string | null;
+  years_experience: number | null;
+  service_areas: string[];
+  website_url: string | null;
+};
 type Report = {
   id: string;
   category: string;
@@ -287,6 +296,34 @@ export function Admin() {
           <article key={a.id}>
             <h3>{a.name}</h3>
             <p>{a.agency_name || "Independent agent"}</p>
+            <dl className="admin-agent-details">
+              <div>
+                <dt>Experience</dt>
+                <dd>
+                  {a.years_experience === null
+                    ? "Not provided"
+                    : `${a.years_experience} years`}
+                </dd>
+              </div>
+              <div>
+                <dt>Service areas</dt>
+                <dd>{a.service_areas.join(", ") || "Not provided"}</dd>
+              </div>
+              <div>
+                <dt>Registration</dt>
+                <dd>{a.license_number || "Not provided"}</dd>
+              </div>
+              {a.website_url && (
+                <div>
+                  <dt>Website</dt>
+                  <dd>
+                    <a href={a.website_url} rel="noreferrer" target="_blank">
+                      Open website
+                    </a>
+                  </dd>
+                </div>
+              )}
+            </dl>
             <form onSubmit={(e) => review(e, a.id, "agent")}>
               <label>
                 Decision

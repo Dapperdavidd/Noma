@@ -81,18 +81,29 @@ pub async fn queue(
         }
         "agents" => {
             let mut query: QueryBuilder<Postgres> = QueryBuilder::new(
-                "SELECT jsonb_build_object('id',a.user_id,'name',u.first_name || ' ' || u.last_name,'agency_name',a.agency_name,'verification_status',a.verification_status,'created_at',a.created_at) FROM agent_profiles a JOIN users u ON u.id=a.user_id WHERE a.verification_status='pending'",
+                "SELECT jsonb_build_object(
+                    'id',a.user_id,'application_id',v.id,
+                    'name',u.first_name || ' ' || u.last_name,
+                    'agency_name',a.agency_name,'verification_status',a.verification_status,
+                    'license_number',a.license_number,'years_experience',a.years_experience,
+                    'service_areas',a.service_areas,'website_url',a.website_url,
+                    'created_at',v.submitted_at
+                 )
+                 FROM agent_verification_applications v
+                 JOIN agent_profiles a ON a.user_id=v.agent_id
+                 JOIN users u ON u.id=v.agent_id
+                 WHERE v.status='pending'",
             );
             if let Some((created_at, id)) = cursor_value {
                 query
-                    .push(" AND (a.created_at,a.user_id)>(")
+                    .push(" AND (v.submitted_at,a.user_id)>(")
                     .push_bind(created_at)
                     .push(",")
                     .push_bind(id)
                     .push(")");
             }
             query
-                .push(" ORDER BY a.created_at,a.user_id LIMIT ")
+                .push(" ORDER BY v.submitted_at,a.user_id LIMIT ")
                 .push_bind(limit + 1);
             query.build_query_scalar().fetch_all(pool.get_ref()).await?
         }
@@ -140,7 +151,20 @@ pub async fn review(
  ("property","restore")=>sqlx::query("UPDATE properties SET status='draft',updated_at=now() WHERE id=$1 AND status='suspended'").bind(*id).execute(&mut *tx).await?,
  ("property","feature")=>sqlx::query("UPDATE properties SET featured_until=now()+interval '30 days',updated_at=now() WHERE id=$1 AND status='active'").bind(*id).execute(&mut *tx).await?,
  ("property","unfeature")=>sqlx::query("UPDATE properties SET featured_until=NULL,updated_at=now() WHERE id=$1").bind(*id).execute(&mut *tx).await?,
- ("agent","verify"|"reject")=>sqlx::query("UPDATE agent_profiles SET verification_status=$1,updated_at=now() WHERE user_id=$2").bind(if body.action=="verify"{"verified"}else{"rejected"}).bind(*id).execute(&mut *tx).await?,
+ ("agent","verify"|"reject")=>sqlx::query(
+     "WITH reviewed AS (
+        UPDATE agent_verification_applications
+        SET status=$1,reviewer_id=$2,review_reason=$3,reviewed_at=now()
+        WHERE agent_id=$4 AND status='pending'
+        RETURNING agent_id
+      )
+      UPDATE agent_profiles a
+      SET verification_status=$5,updated_at=now()
+      FROM reviewed r WHERE a.user_id=r.agent_id"
+ ).bind(if body.action=="verify"{"approved"}else{"rejected"})
+  .bind(user.id).bind(body.reason.trim()).bind(*id)
+  .bind(if body.action=="verify"{"verified"}else{"rejected"})
+  .execute(&mut *tx).await?,
  _=>return Err(bad("Invalid review action"))};
     if changed.rows_affected() == 0 {
         return Err(bad("The item is unavailable for this action"));

@@ -818,11 +818,26 @@ test("agent profiles, amenities, inquiry statuses and administrator boundaries",
       await owner.client.put(`${baseURL}/agent/profile`, {
         data: {
           agency_name: "NOMA Test Agency",
-          bio: "Helping people find their next chapter.",
+          bio: "Helping people find their next chapter across Lagos with clear and professional guidance.",
+          license_number: "NOMA-TEST-100",
+          years_experience: 5,
+          service_areas: ["Lekki", "Ikeja"],
+          website_url: "https://example.com",
         },
       })
     ).status(),
   ).toBe(204);
+  expect(
+    (await (await owner.client.get(`${baseURL}/agent/profile`)).json())
+      .verification_status,
+  ).toBe("unsubmitted");
+  expect(
+    (
+      await owner.client.post(`${baseURL}/agent/verification`, {
+        data: { declaration: true },
+      })
+    ).status(),
+  ).toBe(201);
   expect(
     (await (await owner.client.get(`${baseURL}/agent/profile`)).json())
       .verification_status,
@@ -1122,6 +1137,35 @@ test("administrator review is audited and verification stays independent", async
   expect(metrics.total_users).toBeGreaterThanOrEqual(3);
   expect(metrics.active_users).toBeGreaterThanOrEqual(3);
   expect(metrics).toHaveProperty("photos_uploaded_today");
+  expect(
+    (
+      await owner.client.put(`${baseURL}/agent/profile`, {
+        data: {
+          agency_name: "Reviewed Property Partners",
+          bio: "We support property seekers with transparent inspections and detailed local market guidance.",
+          license_number: "RPP-2048",
+          years_experience: 7,
+          service_areas: ["Lekki", "Victoria Island"],
+          website_url: "https://example.com/agents/reviewed",
+        },
+      })
+    ).status(),
+  ).toBe(204);
+  expect(
+    (
+      await owner.client.post(`${baseURL}/agent/verification`, {
+        data: { declaration: true },
+      })
+    ).status(),
+  ).toBe(201);
+  const agentQueue = await (
+    await administrator.client.get(`${baseURL}/admin/queue/agents`)
+  ).json();
+  const queuedAgent = agentQueue.data.find(
+    (item: any) => item.id === owner.user.id,
+  );
+  expect(queuedAgent.license_number).toBe("RPP-2048");
+  expect(queuedAgent.service_areas).toContain("Lekki");
   const property = await create(
     owner.client,
     `Reviewed home ${crypto.randomUUID()}`,
@@ -1212,6 +1256,12 @@ test("administrator review is audited and verification stays independent", async
       )
     ).status(),
   ).toBe(204);
+  const reviewedAgentQueue = await (
+    await administrator.client.get(`${baseURL}/admin/queue/agents`)
+  ).json();
+  expect(reviewedAgentQueue.data.map((item: any) => item.id)).not.toContain(
+    owner.user.id,
+  );
   let detail = await (
     await owner.client.get(`${baseURL}/properties/${property.slug}`)
   ).json();
