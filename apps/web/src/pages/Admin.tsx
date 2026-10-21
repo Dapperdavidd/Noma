@@ -22,6 +22,18 @@ type Report = {
   reporter: string;
   reporter_email: string;
 };
+type PropertyVerificationReview = {
+  id: string;
+  application_id: string;
+  title: string;
+  slug: string;
+  applicant: string;
+  lister_relationship: string;
+  evidence_type: string;
+  document_reference: string | null;
+  evidence_note: string;
+  evidence_url: string | null;
+};
 type Page<T> = { data: T[]; next_cursor: string | null };
 type Metrics = {
   total_users: number;
@@ -42,43 +54,61 @@ export function Admin() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
+  const [propertyVerifications, setPropertyVerifications] = useState<
+    PropertyVerificationReview[]
+  >([]);
   const [cursors, setCursors] = useState({
     properties: null as string | null,
     agents: null as string | null,
     reports: null as string | null,
+    propertyVerifications: null as string | null,
   });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   async function load() {
     try {
-      const [propertyPage, agentPage, reportPage, nextMetrics] =
-        await Promise.all([
-          api<Page<Property>>("/admin/queue/properties"),
-          api<Page<Agent>>("/admin/queue/agents"),
-          api<Page<Report>>("/admin/queue/reports"),
-          api<Metrics>("/admin/metrics"),
-        ]);
+      const [
+        propertyPage,
+        agentPage,
+        reportPage,
+        verificationPage,
+        nextMetrics,
+      ] = await Promise.all([
+        api<Page<Property>>("/admin/queue/properties"),
+        api<Page<Agent>>("/admin/queue/agents"),
+        api<Page<Report>>("/admin/queue/reports"),
+        api<Page<PropertyVerificationReview>>(
+          "/admin/queue/property-verifications",
+        ),
+        api<Metrics>("/admin/metrics"),
+      ]);
       setProperties(propertyPage.data);
       setAgents(agentPage.data);
       setReports(reportPage.data);
+      setPropertyVerifications(verificationPage.data);
       setMetrics(nextMetrics);
       setCursors({
         properties: propertyPage.next_cursor,
         agents: agentPage.next_cursor,
         reports: reportPage.next_cursor,
+        propertyVerifications: verificationPage.next_cursor,
       });
     } catch (e) {
       setError((e as Error).message);
     }
   }
-  async function showMore(kind: "properties" | "agents" | "reports") {
+  async function showMore(
+    kind: "properties" | "agents" | "reports" | "propertyVerifications",
+  ) {
     const cursor = cursors[kind];
     if (!cursor || busy) return;
     setBusy(true);
     setError("");
     try {
-      const path = `/admin/queue/${kind}?cursor=${encodeURIComponent(cursor)}`;
+      const queueKind =
+        kind === "propertyVerifications" ? "property-verifications" : kind;
+      const path = `/admin/queue/${queueKind}?cursor=${encodeURIComponent(cursor)}`;
       if (kind === "properties") {
         const page = await api<Page<Property>>(path);
         setProperties((current) => [...current, ...page.data]);
@@ -93,12 +123,19 @@ export function Admin() {
           ...current,
           agents: page.next_cursor,
         }));
-      } else {
+      } else if (kind === "reports") {
         const page = await api<Page<Report>>(path);
         setReports((current) => [...current, ...page.data]);
         setCursors((current) => ({
           ...current,
           reports: page.next_cursor,
+        }));
+      } else {
+        const page = await api<Page<PropertyVerificationReview>>(path);
+        setPropertyVerifications((current) => [...current, ...page.data]);
+        setCursors((current) => ({
+          ...current,
+          propertyVerifications: page.next_cursor,
         }));
       }
     } catch (e) {
@@ -231,6 +268,74 @@ export function Admin() {
         </button>
       )}
       {!reports.length && <p className="muted">No open listing reports.</p>}
+      <h2>Property verification applications</h2>
+      <div className="leads">
+        {propertyVerifications.map((application) => (
+          <article key={application.application_id}>
+            <span className="status-pill">
+              {application.evidence_type.replaceAll("_", " ")}
+            </span>
+            <Link to={`/properties/${application.slug}`}>
+              <h3>{application.title}</h3>
+            </Link>
+            <p className="muted">
+              Submitted by {application.applicant} ·{" "}
+              {application.lister_relationship.replaceAll("_", " ")}
+            </p>
+            <p>{application.evidence_note}</p>
+            {application.document_reference && (
+              <p>
+                <strong>Reference:</strong> {application.document_reference}
+              </p>
+            )}
+            {application.evidence_url && (
+              <a
+                className="text-link"
+                href={application.evidence_url}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Open restricted evidence
+              </a>
+            )}
+            <form onSubmit={(e) => review(e, application.id, "property")}>
+              <label>
+                Decision
+                <select name="action">
+                  <option value="verify">Verify property</option>
+                  <option value="reject_verification">
+                    Reject verification
+                  </option>
+                </select>
+              </label>
+              <label>
+                Review reason
+                <textarea
+                  name="reason"
+                  required
+                  minLength={5}
+                  maxLength={2000}
+                />
+              </label>
+              <button className="button olive" disabled={busy}>
+                Record verification decision
+              </button>
+            </form>
+          </article>
+        ))}
+      </div>
+      {cursors.propertyVerifications && (
+        <button
+          className="button ghost load-more"
+          onClick={() => void showMore("propertyVerifications")}
+          disabled={busy}
+        >
+          Show more verification applications
+        </button>
+      )}
+      {!propertyVerifications.length && (
+        <p className="muted">No property verification applications.</p>
+      )}
       <h2>Properties</h2>
       <div className="leads">
         {properties.map((p) => (
@@ -249,9 +354,6 @@ export function Admin() {
                     <option value="restore">Restore to draft</option>
                   ) : (
                     <>
-                      {!p.is_verified && (
-                        <option value="verify">Verify property</option>
-                      )}
                       <option value={p.is_featured ? "unfeature" : "feature"}>
                         {p.is_featured
                           ? "Remove featured placement"

@@ -8,6 +8,7 @@ import {
   CalendarCheck,
   Star,
   Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 import { api, money, type Property } from "../api";
 import { hero } from "../demo";
@@ -215,12 +216,25 @@ export function Dashboard() {
                     Edit <ArrowUpRight size={15} />
                   </Link>
                   {p.status === "active" && (
-                    <Link
-                      className="text-link"
-                      to={`/billing?property=${p.id}`}
-                    >
-                      Promote <Sparkles size={15} />
-                    </Link>
+                    <div className="management-actions">
+                      <Link
+                        className="text-link"
+                        to={`/dashboard/properties/${p.id}/verification`}
+                      >
+                        {p.is_verified
+                          ? "Verified"
+                          : p.verification_status === "pending"
+                            ? "Under review"
+                            : "Get verified"}{" "}
+                        <ShieldCheck size={15} />
+                      </Link>
+                      <Link
+                        className="text-link"
+                        to={`/billing?property=${p.id}`}
+                      >
+                        Promote <Sparkles size={15} />
+                      </Link>
+                    </div>
                   )}
                   <select
                     aria-label={`Status of ${p.title}`}

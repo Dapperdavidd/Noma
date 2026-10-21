@@ -12,6 +12,7 @@ mod notifications;
 mod observability;
 mod pagination;
 mod properties;
+mod property_verification;
 mod reports;
 mod security;
 use actix_web::{
@@ -195,6 +196,7 @@ async fn main() -> std::io::Result<()> {
                     .configure(auth::routes)
                     .configure(billing::routes)
                     .configure(properties::routes)
+                    .configure(property_verification::routes)
                     .configure(reports::routes)
                     .configure(community::routes)
                     .configure(images::routes)

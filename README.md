@@ -45,7 +45,7 @@ Account registration and sign-in; Google identity linking; email verification an
 
 ## Before public launch
 
-Connect a production database and hosting, verify a transactional-email sending domain, configure the production Google origin, and review the location catalog. Configure HTTPS and `COOKIE_SECURE=true`. Add production monitoring, backups/restore verification, an edge abuse-control policy, legal documents and operational verification procedures. No payment or automated verification claims are made.
+Connect a production database and hosting, verify a transactional-email sending domain, configure the production Google origin, and review the location catalog. Configure HTTPS and `COOKIE_SECURE=true`. Add production monitoring, backups/restore verification, an edge abuse-control policy, legal documents and operational verification procedures. Keep Paystack in test mode until pricing and support procedures are approved; NOMA verification remains a manual evidence review.
 
 ## Account providers
 
@@ -65,7 +65,7 @@ Each signed upload creates a short-lived database intent. After the browser uplo
 
 ## Administration
 
-The `/admin` operations dashboard is available only to database-provisioned administrators. It reports user, session, property, daily media and moderation counts and includes the review queues. Public registration cannot create administrators. Provision the initial trusted account with an audited database operation after it has registered; no default admin password exists. Property and agent verification are separate, featured placement is time-limited, and every review action records an actor and reason. Agents can edit their professional profiles at `/dashboard/profile`; public agent profiles expose reputation without revealing private account details. Every user can manage listings, inquiries, inspections and eligible reviews in the property dashboard.
+The `/admin` operations dashboard is available only to database-provisioned administrators. It reports user, session, property, daily media and moderation counts and includes the review queues. Public registration cannot create administrators. Provision the initial trusted account with an audited database operation after it has registered; no default admin password exists. Property and agent verification are separate, featured placement is time-limited, and every review action records an actor and reason. Agents submit a professional-profile snapshot for review. Listing owners submit a separate property application with an ownership or authorization declaration and restricted evidence reference; those records never appear on public listing responses. Editing an approved profile or property removes its stale verification state. Agents can edit their professional profiles at `/dashboard/profile`; public agent profiles expose reputation without revealing private account details. Every user can manage listings, inquiries, inspections and eligible reviews in the property dashboard.
 
 ## Billing
 

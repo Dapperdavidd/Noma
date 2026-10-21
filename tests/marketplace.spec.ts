@@ -1269,6 +1269,57 @@ test("administrator review is audited and verification stays independent", async
   expect(detail.is_verified).toBe(false);
   expect(
     (
+      await seeker.client.post(
+        `${baseURL}/properties/${property.id}/verification`,
+        {
+          data: {
+            evidence_type: "other",
+            evidence_note:
+              "I should not be allowed to verify a property owned by another account.",
+            declaration: true,
+          },
+        },
+      )
+    ).status(),
+  ).toBe(404);
+  expect(
+    (
+      await owner.client.post(
+        `${baseURL}/properties/${property.id}/verification`,
+        {
+          data: {
+            evidence_type: "deed_of_assignment",
+            document_reference: "TEST-DEED-2048",
+            evidence_note:
+              "The owner submitted a deed reference and confirms authority to publish this listing.",
+            evidence_url: "https://example.com/restricted/test-evidence",
+            declaration: true,
+          },
+        },
+      )
+    ).status(),
+  ).toBe(201);
+  const verificationState = await (
+    await owner.client.get(`${baseURL}/properties/${property.id}/verification`)
+  ).json();
+  expect(verificationState.application.status).toBe("pending");
+  expect(
+    (
+      await owner.client.post(
+        `${baseURL}/properties/${property.id}/verification`,
+        {
+          data: {
+            evidence_type: "deed_of_assignment",
+            evidence_note:
+              "A duplicate application must not replace an application already under review.",
+            declaration: true,
+          },
+        },
+      )
+    ).status(),
+  ).toBe(400);
+  expect(
+    (
       await administrator.client.post(
         `${baseURL}/admin/reviews/${property.id}`,
         {
@@ -1296,6 +1347,10 @@ test("administrator review is audited and verification stays independent", async
     await owner.client.get(`${baseURL}/properties/${property.slug}`)
   ).json();
   expect(detail.is_verified).toBe(false);
+  const withdrawnVerification = await (
+    await owner.client.get(`${baseURL}/properties/${property.id}/verification`)
+  ).json();
+  expect(withdrawnVerification.application.status).toBe("withdrawn");
   expect(
     (
       await administrator.client.post(

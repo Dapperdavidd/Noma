@@ -18,6 +18,7 @@ import { Discover } from "./pages/Discover";
 import { PublicAgentProfile } from "./pages/PublicAgentProfile";
 import { Notifications } from "./pages/Notifications";
 import { Billing } from "./pages/Billing";
+import { PropertyVerification } from "./pages/PropertyVerification";
 import {
   ForgotPassword,
   ResetPassword,
@@ -144,6 +145,20 @@ export default function App() {
               <Protected agent>
                 <main className="section">
                   <Admin />
+                </main>
+              </Protected>
+              <Footer />
+            </>
+          }
+        />
+        <Route
+          path="/dashboard/properties/:id/verification"
+          element={
+            <>
+              <Header />
+              <Protected>
+                <main className="section">
+                  <PropertyVerification />
                 </main>
               </Protected>
               <Footer />

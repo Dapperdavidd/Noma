@@ -107,6 +107,35 @@ pub async fn queue(
                 .push_bind(limit + 1);
             query.build_query_scalar().fetch_all(pool.get_ref()).await?
         }
+        "property-verifications" => {
+            let mut query: QueryBuilder<Postgres> = QueryBuilder::new(
+                "SELECT jsonb_build_object(
+                    'id',p.id,'application_id',v.id,'title',p.title,'slug',p.slug,
+                    'applicant',u.first_name || ' ' || u.last_name,
+                    'lister_relationship',v.lister_relationship,
+                    'evidence_type',v.evidence_type,
+                    'document_reference',v.document_reference,
+                    'evidence_note',v.evidence_note,'evidence_url',v.evidence_url,
+                    'created_at',v.submitted_at
+                 )
+                 FROM property_verification_applications v
+                 JOIN properties p ON p.id=v.property_id
+                 JOIN users u ON u.id=v.applicant_id
+                 WHERE v.status='pending'",
+            );
+            if let Some((created_at, id)) = cursor_value {
+                query
+                    .push(" AND (v.submitted_at,p.id)>(")
+                    .push_bind(created_at)
+                    .push(",")
+                    .push_bind(id)
+                    .push(")");
+            }
+            query
+                .push(" ORDER BY v.submitted_at,p.id LIMIT ")
+                .push_bind(limit + 1);
+            query.build_query_scalar().fetch_all(pool.get_ref()).await?
+        }
         "reports" => {
             let mut query: QueryBuilder<Postgres> = QueryBuilder::new(
                 "SELECT jsonb_build_object('id',r.id,'category',r.category,'details',r.details,'created_at',r.created_at,'property_id',p.id,'property',p.title,'slug',p.slug,'reporter',u.first_name || ' ' || u.last_name,'reporter_email',u.email) FROM property_reports r JOIN properties p ON p.id=r.property_id JOIN users u ON u.id=r.reporter_id WHERE r.status='open'",
@@ -146,7 +175,18 @@ pub async fn review(
     }
     let mut tx = pool.begin().await?;
     let changed=match(body.target_type.as_str(),body.action.as_str()){
- ("property","verify")=>sqlx::query("UPDATE properties SET is_verified=true,updated_at=now() WHERE id=$1 AND status='active'").bind(*id).execute(&mut *tx).await?,
+ ("property","verify"|"reject_verification")=>sqlx::query(
+     "WITH reviewed AS (
+        UPDATE property_verification_applications
+        SET status=$1,reviewer_id=$2,review_reason=$3,reviewed_at=now()
+        WHERE property_id=$4 AND status='pending'
+        RETURNING property_id
+      )
+      UPDATE properties p SET is_verified=$5,updated_at=now()
+      FROM reviewed r WHERE p.id=r.property_id AND p.status='active'"
+ ).bind(if body.action=="verify"{"approved"}else{"rejected"})
+  .bind(user.id).bind(body.reason.trim()).bind(*id).bind(body.action=="verify")
+  .execute(&mut *tx).await?,
  ("property","suspend")=>sqlx::query("UPDATE properties SET status='suspended',is_verified=false,updated_at=now() WHERE id=$1").bind(*id).execute(&mut *tx).await?,
  ("property","restore")=>sqlx::query("UPDATE properties SET status='draft',updated_at=now() WHERE id=$1 AND status='suspended'").bind(*id).execute(&mut *tx).await?,
  ("property","feature")=>sqlx::query("UPDATE properties SET featured_until=now()+interval '30 days',updated_at=now() WHERE id=$1 AND status='active'").bind(*id).execute(&mut *tx).await?,

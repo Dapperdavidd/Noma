@@ -8,7 +8,7 @@ use actix_web::http::StatusCode;
 use serde_json::{Value, json};
 use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
-pub(crate) const CARD: &str = "SELECT jsonb_build_object('id',p.id,'title',p.title,'slug',p.slug,'price',p.price,'listing_type',p.listing_type,'property_type',p.property_type,'rental_period',p.rental_period,'bedrooms',p.bedrooms,'bathrooms',p.bathrooms,'size_sqm',p.size_sqm,'status',p.status,'is_verified',p.is_verified,'is_featured',COALESCE(p.featured_until>now(),false),'has_video',EXISTS(SELECT 1 FROM property_videos WHERE property_id=p.id),'created_at',p.created_at,'city',c.name,'state',s.name,'area',a.name,'cover_image',(SELECT url FROM property_images WHERE property_id=p.id ORDER BY is_cover DESC,position LIMIT 1)) FROM properties p JOIN cities c ON c.id=p.city_id JOIN states s ON s.id=p.state_id LEFT JOIN areas a ON a.id=p.area_id";
+pub(crate) const CARD: &str = "SELECT jsonb_build_object('id',p.id,'title',p.title,'slug',p.slug,'price',p.price,'listing_type',p.listing_type,'property_type',p.property_type,'rental_period',p.rental_period,'bedrooms',p.bedrooms,'bathrooms',p.bathrooms,'size_sqm',p.size_sqm,'status',p.status,'is_verified',p.is_verified,'verification_status',COALESCE((SELECT v.status FROM property_verification_applications v WHERE v.property_id=p.id ORDER BY v.submitted_at DESC LIMIT 1),CASE WHEN p.is_verified THEN 'approved' ELSE 'unsubmitted' END),'is_featured',COALESCE(p.featured_until>now(),false),'has_video',EXISTS(SELECT 1 FROM property_videos WHERE property_id=p.id),'created_at',p.created_at,'city',c.name,'state',s.name,'area',a.name,'cover_image',(SELECT url FROM property_images WHERE property_id=p.id ORDER BY is_cover DESC,position LIMIT 1)) FROM properties p JOIN cities c ON c.id=p.city_id JOIN states s ON s.id=p.state_id LEFT JOIN areas a ON a.id=p.area_id";
 pub async fn search(pool: &PgPool, query: &Search) -> Result<Value, ApiError> {
     let limit = query.limit.unwrap_or(20).clamp(1, 50);
     let sort = query.sort.as_deref().unwrap_or("newest");
@@ -251,6 +251,14 @@ pub async fn save(
                 "You do not own this property",
             ));
         }
+        sqlx::query(
+            "UPDATE property_verification_applications
+             SET status='withdrawn',reviewed_at=now()
+             WHERE property_id=$1 AND status IN ('pending','approved')",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
     }
     let mut prepared_images = Vec::with_capacity(body.images.len());
     for image in &body.images {

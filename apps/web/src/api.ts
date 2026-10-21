@@ -30,6 +30,8 @@ export type Property = {
   is_featured?: boolean;
   has_video?: boolean;
   is_verified: boolean;
+  verification_status?:
+    "unsubmitted" | "pending" | "approved" | "rejected" | "withdrawn";
   status: string;
   created_at: string;
   description?: string;
