@@ -88,4 +88,48 @@ impl EmailClient {
         )
         .await
     }
+
+    pub async fn activity(
+        &self,
+        to: &str,
+        subject: &str,
+        heading: &str,
+        detail: &str,
+        path: &str,
+    ) -> Result<(), String> {
+        let link = format!("{}{}", self.app_url, path);
+        self.send(
+            to,
+            subject,
+            format!(
+                "<h1>{}</h1><p>{}</p><p><a href=\"{}\">Open NOMA</a></p><p>You can change activity-email preferences from your NOMA account.</p>",
+                escape_html(heading),
+                escape_html(detail),
+                escape_html(&link)
+            ),
+        )
+        .await
+    }
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::escape_html;
+
+    #[test]
+    fn activity_email_content_is_escaped() {
+        assert_eq!(
+            escape_html("<script>'home' & \"more\"</script>"),
+            "&lt;script&gt;&#39;home&#39; &amp; &quot;more&quot;&lt;/script&gt;"
+        );
+    }
 }

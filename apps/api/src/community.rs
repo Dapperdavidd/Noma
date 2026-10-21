@@ -1,6 +1,8 @@
 use crate::{
     auth,
+    email::EmailClient,
     error::{ApiError, bad},
+    notifications,
     pagination::{Page, cursor},
 };
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -65,6 +67,7 @@ pub struct Inquiry {
 pub async fn inquire(
     req: HttpRequest,
     pool: web::Data<PgPool>,
+    email: web::Data<EmailClient>,
     id: web::Path<Uuid>,
     body: web::Json<Inquiry>,
 ) -> Result<HttpResponse, ApiError> {
@@ -72,16 +75,15 @@ pub async fn inquire(
     if !(10..=3000).contains(&body.message.trim().len()) {
         return Err(bad("Message must contain 10–3,000 characters"));
     }
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM properties WHERE id=$1 AND status='active' AND agent_id<>$2)",
+    let listing: Option<(Uuid, String)> = sqlx::query_as(
+        "SELECT agent_id,title FROM properties WHERE id=$1 AND status='active' AND agent_id<>$2",
     )
     .bind(*id)
     .bind(user.id)
-    .fetch_one(pool.get_ref())
+    .fetch_optional(pool.get_ref())
     .await?;
-    if !exists {
-        return Err(bad("You cannot inquire about this listing"));
-    }
+    let (agent_id, property_title) =
+        listing.ok_or_else(|| bad("You cannot inquire about this listing"))?;
     let mut tx = pool.begin().await?;
     let inquiry_id = Uuid::new_v4();
     sqlx::query("INSERT INTO inquiries(id,property_id,user_id,message) VALUES($1,$2,$3,$4)")
@@ -104,6 +106,23 @@ pub async fn inquire(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    if email.configured()
+        && let Some(address) = notifications::activity_email(&pool, agent_id).await?
+        && let Err(error) = email
+            .activity(
+                &address,
+                "New inquiry on NOMA",
+                "A property seeker contacted you",
+                &format!(
+                    "{} {} sent an inquiry about {property_title}.",
+                    user.first_name, user.last_name
+                ),
+                "/dashboard?tab=inquiries",
+            )
+            .await
+    {
+        tracing::warn!(%error, user_id=%agent_id, "Unable to deliver inquiry email");
+    }
     Ok(HttpResponse::Created().finish())
 }
 pub async fn leads(
@@ -220,6 +239,7 @@ pub struct LeadStatus {
 pub async fn lead_status(
     req: HttpRequest,
     pool: web::Data<PgPool>,
+    email: web::Data<EmailClient>,
     id: web::Path<Uuid>,
     body: web::Json<LeadStatus>,
 ) -> Result<HttpResponse, ApiError> {
@@ -257,6 +277,20 @@ pub async fn lead_status(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    if email.configured()
+        && let Some(address) = notifications::activity_email(&pool, recipient).await?
+        && let Err(error) = email
+            .activity(
+                &address,
+                "Your NOMA inquiry was updated",
+                "Inquiry status updated",
+                &format!("Your inquiry about {property} is now {}.", body.status),
+                "/dashboard?tab=inquiries",
+            )
+            .await
+    {
+        tracing::warn!(%error, user_id=%recipient, "Unable to deliver inquiry-status email");
+    }
     Ok(HttpResponse::NoContent().finish())
 }
 pub fn routes(cfg: &mut web::ServiceConfig) {

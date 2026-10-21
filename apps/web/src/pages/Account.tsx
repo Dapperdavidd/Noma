@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, LockKeyhole, UserRound } from "lucide-react";
+import { ArrowRight, Bell, LockKeyhole, UserRound } from "lucide-react";
 import { api, type User } from "../api";
 import { useAuth } from "../auth";
 import { Notice } from "../components";
@@ -9,9 +9,19 @@ export function Account() {
   const { user, refresh } = useAuth();
   const navigate = useNavigate();
   const [profileSaved, setProfileSaved] = useState(false);
+  const [preferencesSaved, setPreferencesSaved] = useState(false);
+  const [emailActivity, setEmailActivity] = useState(true);
   const [verificationSent, setVerificationSent] = useState(false);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState<"profile" | "password" | null>(null);
+  const [busy, setBusy] = useState<
+    "profile" | "password" | "notifications" | null
+  >(null);
+
+  useEffect(() => {
+    api<{ email_activity: boolean }>("/notifications/preferences")
+      .then((preferences) => setEmailActivity(preferences.email_activity))
+      .catch((e) => setError(e.message));
+  }, []);
 
   async function saveProfile(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -62,6 +72,24 @@ export function Account() {
     }
   }
 
+  async function saveNotifications(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy("notifications");
+    setError("");
+    setPreferencesSaved(false);
+    try {
+      await api("/notifications/preferences", {
+        method: "PUT",
+        body: JSON.stringify({ email_activity: emailActivity }),
+      });
+      setPreferencesSaved(true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (!user) return null;
   return (
     <>
@@ -77,6 +105,9 @@ export function Account() {
       </div>
       {error && <Notice>{error}</Notice>}
       {profileSaved && <Notice>Your account details have been updated.</Notice>}
+      {preferencesSaved && (
+        <Notice>Your notification preferences have been updated.</Notice>
+      )}
       {!user.is_verified && (
         <Notice>
           Verify your email to secure account recovery.{" "}
@@ -198,6 +229,27 @@ export function Account() {
             </label>
             <button className="button outline" disabled={busy !== null}>
               {busy === "password" ? "Updating…" : "Update password"}
+            </button>
+          </form>
+        </section>
+        <section>
+          <Bell size={24} />
+          <h2>Notifications</h2>
+          <p className="muted">
+            Important activity always appears inside NOMA. Choose whether to
+            receive a matching email as well.
+          </p>
+          <form onSubmit={saveNotifications}>
+            <label className="preference-toggle">
+              <input
+                type="checkbox"
+                checked={emailActivity}
+                onChange={(event) => setEmailActivity(event.target.checked)}
+              />
+              Email me about inquiries, inspections and reviews
+            </label>
+            <button className="button outline" disabled={busy !== null}>
+              {busy === "notifications" ? "Saving…" : "Save notifications"}
             </button>
           </form>
         </section>

@@ -3,6 +3,7 @@ use crate::{
     error::{ApiError, bad},
 };
 use actix_web::{HttpRequest, HttpResponse, web};
+use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -76,9 +77,62 @@ pub async fn mark_all_read(
     Ok(HttpResponse::NoContent().finish())
 }
 
+pub async fn preferences(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, ApiError> {
+    let user = auth::current(&req, &pool).await?;
+    let email_activity: bool = sqlx::query_scalar(
+        "SELECT COALESCE((SELECT email_activity FROM notification_preferences WHERE user_id=$1),true)",
+    )
+    .bind(user.id)
+    .fetch_one(pool.get_ref())
+    .await?;
+    Ok(HttpResponse::Ok().json(json!({"email_activity":email_activity})))
+}
+
+#[derive(Deserialize)]
+pub struct Preferences {
+    email_activity: bool,
+}
+
+pub async fn update_preferences(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    body: web::Json<Preferences>,
+) -> Result<HttpResponse, ApiError> {
+    let user = auth::current(&req, &pool).await?;
+    sqlx::query(
+        "INSERT INTO notification_preferences(user_id,email_activity) VALUES($1,$2)
+         ON CONFLICT(user_id) DO UPDATE SET email_activity=EXCLUDED.email_activity,updated_at=now()",
+    )
+    .bind(user.id)
+    .bind(body.email_activity)
+    .execute(pool.get_ref())
+    .await?;
+    Ok(HttpResponse::NoContent().finish())
+}
+
+pub async fn activity_email(pool: &PgPool, user_id: Uuid) -> Result<Option<String>, ApiError> {
+    let email: Option<String> = sqlx::query_scalar(
+        "SELECT u.email FROM users u
+         LEFT JOIN notification_preferences n ON n.user_id=u.id
+         WHERE u.id=$1 AND u.is_active AND COALESCE(n.email_activity,true)",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(email)
+}
+
 pub fn routes(cfg: &mut web::ServiceConfig) {
     cfg.route("/notifications", web::get().to(list))
         .route("/notifications/unread", web::get().to(unread_count))
         .route("/notifications/read-all", web::post().to(mark_all_read))
+        .route("/notifications/preferences", web::get().to(preferences))
+        .route(
+            "/notifications/preferences",
+            web::put().to(update_preferences),
+        )
         .route("/notifications/{id}/read", web::patch().to(mark_read));
 }

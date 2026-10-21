@@ -290,6 +290,23 @@ test("ownership, publishing, search, favorites, inquiries and session revocation
   expect(profileBody.phone).toBe("+234 801 234 5678");
   expect(profileBody.whatsapp).toBe("+234 809 876 5432");
   expect(
+    await (
+      await owner.client.get(`${baseURL}/notifications/preferences`)
+    ).json(),
+  ).toEqual({ email_activity: true });
+  expect(
+    (
+      await owner.client.put(`${baseURL}/notifications/preferences`, {
+        data: { email_activity: false },
+      })
+    ).status(),
+  ).toBe(204);
+  expect(
+    await (
+      await owner.client.get(`${baseURL}/notifications/preferences`)
+    ).json(),
+  ).toEqual({ email_activity: false });
+  expect(
     (
       await owner.client.put(`${baseURL}/account/profile`, {
         data: { first_name: "Ada", last_name: "Okafor", phone: "invalid" },

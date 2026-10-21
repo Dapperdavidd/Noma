@@ -30,6 +30,8 @@ Users can update their names and optional phone number without changing account 
 
 Google identities are stored separately from users and link only after Google supplies a verified email claim. The API validates token signature, issuer, audience and expiry against Google's rotating signing keys. Google-created accounts may add a local password later without fabricating a placeholder credential.
 
+Marketplace actions create durable in-app notifications inside the same database transaction as the inquiry, inspection change or review. Optional activity email is attempted only after commit, so a provider outage never rolls back valid marketplace data. Users can disable activity email while retaining the in-app record.
+
 Email verification and password recovery use random 256-bit, single-use tokens; PostgreSQL stores only SHA-256 hashes. Issuing a new token invalidates earlier unused tokens for that purpose. Password reset responses do not reveal whether an address exists, and a successful reset verifies the address and revokes every session. Provider delivery happens after the account transaction commits, so a temporary email outage cannot leave a partially created account.
 
 Cookie-authenticated mutations require an exact configured Origin. CORS only permits the configured frontend origin with credentials. Request bodies are capped. Database failures are logged internally and return safe messages. Never trust client-provided user IDs, role escalation, forwarded IP headers or verification fields.

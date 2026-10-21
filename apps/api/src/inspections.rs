@@ -1,6 +1,8 @@
 use crate::{
     auth,
+    email::EmailClient,
     error::{ApiError, bad},
+    notifications,
 };
 use actix_web::{HttpRequest, HttpResponse, http::StatusCode, web};
 use chrono::{DateTime, Utc};
@@ -18,6 +20,7 @@ pub struct InspectionRequest {
 pub async fn create(
     req: HttpRequest,
     pool: web::Data<PgPool>,
+    email: web::Data<EmailClient>,
     property_id: web::Path<Uuid>,
     body: web::Json<InspectionRequest>,
 ) -> Result<HttpResponse, ApiError> {
@@ -64,6 +67,23 @@ pub async fn create(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    if email.configured()
+        && let Some(address) = notifications::activity_email(&pool, agent_id).await?
+        && let Err(error) = email
+            .activity(
+                &address,
+                "New NOMA inspection request",
+                "A customer requested an inspection",
+                &format!(
+                    "{} {} requested an inspection for {property_title}.",
+                    user.first_name, user.last_name
+                ),
+                "/dashboard?tab=inspections",
+            )
+            .await
+    {
+        tracing::warn!(%error, user_id=%agent_id, "Unable to deliver inspection-request email");
+    }
     Ok(HttpResponse::Created().json(json!({"id": id})))
 }
 
@@ -100,6 +120,7 @@ pub struct InspectionStatus {
 pub async fn update(
     req: HttpRequest,
     pool: web::Data<PgPool>,
+    email: web::Data<EmailClient>,
     id: web::Path<Uuid>,
     body: web::Json<InspectionStatus>,
 ) -> Result<HttpResponse, ApiError> {
@@ -167,6 +188,23 @@ pub async fn update(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    if email.configured()
+        && let Some(address) = notifications::activity_email(&pool, recipient).await?
+        && let Err(error) = email
+            .activity(
+                &address,
+                "Your NOMA inspection was updated",
+                "Inspection status updated",
+                &format!(
+                    "The inspection for {property_title} is now {}.",
+                    body.status
+                ),
+                "/dashboard?tab=inspections",
+            )
+            .await
+    {
+        tracing::warn!(%error, user_id=%recipient, "Unable to deliver inspection-status email");
+    }
     Ok(HttpResponse::NoContent().finish())
 }
 
@@ -183,6 +221,7 @@ pub struct Review {
 pub async fn review(
     req: HttpRequest,
     pool: web::Data<PgPool>,
+    email: web::Data<EmailClient>,
     id: web::Path<Uuid>,
     body: web::Json<Review>,
 ) -> Result<HttpResponse, ApiError> {
@@ -237,6 +276,20 @@ pub async fn review(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    if email.configured()
+        && let Some(address) = notifications::activity_email(&pool, agent_id).await?
+        && let Err(error) = email
+            .activity(
+                &address,
+                "New review on your NOMA profile",
+                "A customer reviewed your inspection",
+                &format!("You received a {}-star review.", body.rating),
+                &format!("/agents/{agent_id}"),
+            )
+            .await
+    {
+        tracing::warn!(%error, user_id=%agent_id, "Unable to deliver review email");
+    }
     Ok(HttpResponse::Created().finish())
 }
 
