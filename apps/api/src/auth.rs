@@ -14,6 +14,7 @@ use argon2::{
     password_hash::{PasswordHash, SaltString, rand_core::OsRng},
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -373,6 +374,133 @@ pub async fn change_password(
     Ok(HttpResponse::NoContent().cookie(cookie).finish())
 }
 
+pub async fn export_account(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, ApiError> {
+    let user = current(&req, &pool).await?;
+    let data: Value = sqlx::query_scalar(
+        "SELECT jsonb_build_object(
+            'exported_at',now(),
+            'account',to_jsonb(u)-'password_hash',
+            'agent_profile',(SELECT to_jsonb(a) FROM agent_profiles a WHERE a.user_id=u.id),
+            'properties',COALESCE((SELECT jsonb_agg(to_jsonb(p) ORDER BY p.created_at) FROM properties p WHERE p.agent_id=u.id),'[]'::jsonb),
+            'favorites',COALESCE((SELECT jsonb_agg(to_jsonb(f) ORDER BY f.created_at) FROM favorites f WHERE f.user_id=u.id),'[]'::jsonb),
+            'inquiries',COALESCE((SELECT jsonb_agg(to_jsonb(i) ORDER BY i.created_at) FROM inquiries i WHERE i.user_id=u.id),'[]'::jsonb),
+            'inspections',COALESCE((SELECT jsonb_agg(to_jsonb(i) ORDER BY i.created_at) FROM inspections i WHERE i.seeker_id=u.id OR i.agent_id=u.id),'[]'::jsonb),
+            'reviews_written',COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY r.created_at) FROM agent_reviews r WHERE r.reviewer_id=u.id),'[]'::jsonb),
+            'billing',COALESCE((SELECT jsonb_agg(to_jsonb(b)-'checkout_url' ORDER BY b.created_at) FROM billing_purchases b WHERE b.user_id=u.id),'[]'::jsonb),
+            'notifications',COALESCE((SELECT jsonb_agg(to_jsonb(n) ORDER BY n.created_at) FROM notifications n WHERE n.user_id=u.id),'[]'::jsonb)
+         ) FROM users u WHERE u.id=$1",
+    )
+    .bind(user.id)
+    .fetch_one(pool.get_ref())
+    .await?;
+    Ok(HttpResponse::Ok().json(data))
+}
+
+#[derive(Deserialize)]
+pub struct AccountClosure {
+    confirmation: String,
+    current_password: Option<String>,
+}
+
+pub async fn close_account(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    body: web::Json<AccountClosure>,
+) -> Result<HttpResponse, ApiError> {
+    let user = current(&req, &pool).await?;
+    if user.role == "admin" {
+        return Err(bad(
+            "Administrator accounts require a database-level access review",
+        ));
+    }
+    if body.confirmation.trim() != "CLOSE MY ACCOUNT" {
+        return Err(bad("Type CLOSE MY ACCOUNT to confirm"));
+    }
+    let existing: Option<String> =
+        sqlx::query_scalar("SELECT password_hash FROM users WHERE id=$1")
+            .bind(user.id)
+            .fetch_one(pool.get_ref())
+            .await?;
+    if let Some(hash) = existing {
+        let supplied = body.current_password.clone().unwrap_or_default();
+        if !password_valid(hash, supplied).await? {
+            return Err(ApiError(
+                StatusCode::UNAUTHORIZED,
+                "Current password is incorrect",
+            ));
+        }
+    }
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM sessions WHERE user_id=$1")
+        .bind(user.id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM auth_tokens WHERE user_id=$1")
+        .bind(user.id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM user_identities WHERE user_id=$1")
+        .bind(user.id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM notifications WHERE user_id=$1")
+        .bind(user.id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM favorites WHERE user_id=$1")
+        .bind(user.id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "UPDATE properties SET status='suspended',is_verified=false,updated_at=now()
+         WHERE agent_id=$1 AND status='active'",
+    )
+    .bind(user.id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE property_verification_applications
+         SET status='withdrawn',reviewed_at=now()
+         WHERE applicant_id=$1 AND status='pending'",
+    )
+    .bind(user.id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE agent_verification_applications
+         SET status='withdrawn',reviewed_at=now()
+         WHERE agent_id=$1 AND status='pending'",
+    )
+    .bind(user.id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO moderation_events(id,actor_id,target_id,target_type,action,reason)
+         VALUES($1,$2,$2,'user','self_close','User requested account closure')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(user.id)
+    .execute(&mut *tx)
+    .await?;
+    let anonymous_email = format!("closed+{}@users.invalid", user.id);
+    sqlx::query(
+        "UPDATE users SET email=$1,password_hash=NULL,first_name='Closed',last_name='Account',
+            phone=NULL,whatsapp=NULL,telegram=NULL,instagram=NULL,is_verified=false,
+            is_active=false,updated_at=now() WHERE id=$2",
+    )
+    .bind(anonymous_email)
+    .bind(user.id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let mut cookie = session_cookie(String::new());
+    cookie.make_removal();
+    Ok(HttpResponse::NoContent().cookie(cookie).finish())
+}
+
 #[derive(Deserialize)]
 pub struct GoogleCredential {
     credential: String,
@@ -635,5 +763,7 @@ pub fn routes(cfg: &mut web::ServiceConfig) {
         .route("/auth/me", web::get().to(me))
         .route("/auth/logout", web::post().to(logout))
         .route("/account/profile", web::put().to(update_profile))
-        .route("/account/password", web::put().to(change_password));
+        .route("/account/password", web::put().to(change_password))
+        .route("/account/export", web::get().to(export_account))
+        .route("/account", web::delete().to(close_account));
 }

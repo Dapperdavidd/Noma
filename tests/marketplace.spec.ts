@@ -1455,6 +1455,59 @@ test("administrator review is audited and verification stays independent", async
   await seeker.client.dispose();
 });
 
+test("account data export and closure preserve privacy and marketplace safety", async () => {
+  const member = await account("agent");
+  const property = await create(
+    member.client,
+    `Closing account property ${crypto.randomUUID()}`,
+  );
+  expect(
+    (
+      await member.client.patch(`${baseURL}/properties/${property.id}/status`, {
+        data: { status: "active" },
+      })
+    ).status(),
+  ).toBe(204);
+  const exportedResponse = await member.client.get(`${baseURL}/account/export`);
+  expect(exportedResponse.status()).toBe(200);
+  const exported = await exportedResponse.json();
+  expect(exported.account.email).toBe(member.email);
+  expect(exported.account).not.toHaveProperty("password_hash");
+  expect(exported.properties.map((item: any) => item.id)).toContain(
+    property.id,
+  );
+  expect(
+    (
+      await member.client.delete(`${baseURL}/account`, {
+        data: {
+          confirmation: "CLOSE MY ACCOUNT",
+          current_password: "incorrect-password",
+        },
+      })
+    ).status(),
+  ).toBe(401);
+  expect(
+    (
+      await member.client.delete(`${baseURL}/account`, {
+        data: {
+          confirmation: "CLOSE MY ACCOUNT",
+          current_password: "Integration-test-passphrase!",
+        },
+      })
+    ).status(),
+  ).toBe(204);
+  expect((await member.client.get(`${baseURL}/auth/me`)).status()).toBe(401);
+  expect(
+    databaseCommand(
+      `SELECT is_active::text || '|' || (email LIKE 'closed+%@users.invalid')::text FROM users WHERE id='${member.user.id}'`,
+    ),
+  ).toBe("false|true");
+  expect(
+    databaseCommand(`SELECT status FROM properties WHERE id='${property.id}'`),
+  ).toBe("suspended");
+  await member.client.dispose();
+});
+
 test("malformed edit identifiers cannot create a new property", async () => {
   const owner = await account();
   const response = await owner.client.put(`${baseURL}/properties/not-a-uuid`, {

@@ -1,6 +1,13 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, Bell, LockKeyhole, UserRound } from "lucide-react";
+import {
+  ArrowRight,
+  Bell,
+  Download,
+  LockKeyhole,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 import { api, type User } from "../api";
 import { useAuth } from "../auth";
 import { Notice } from "../components";
@@ -14,7 +21,7 @@ export function Account() {
   const [verificationSent, setVerificationSent] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<
-    "profile" | "password" | "notifications" | null
+    "profile" | "password" | "notifications" | "export" | "close" | null
   >(null);
 
   useEffect(() => {
@@ -86,6 +93,44 @@ export function Account() {
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      setBusy(null);
+    }
+  }
+
+  async function exportData() {
+    setBusy("export");
+    setError("");
+    try {
+      const data = await api<Record<string, unknown>>("/account/export");
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `noma-account-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function closeAccount(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy("close");
+    setError("");
+    try {
+      await api("/account", {
+        method: "DELETE",
+        body: JSON.stringify(Object.fromEntries(new FormData(e.currentTarget))),
+      });
+      await refresh();
+      navigate("/", { replace: true });
+    } catch (e) {
+      setError((e as Error).message);
       setBusy(null);
     }
   }
@@ -253,7 +298,60 @@ export function Account() {
             </button>
           </form>
         </section>
+        <section>
+          <Download size={24} />
+          <h2>Your data</h2>
+          <p className="muted">
+            Download a JSON copy of your account, listings, saved properties,
+            inquiries, inspections, reviews, billing history and notifications.
+          </p>
+          <button
+            className="button outline"
+            onClick={() => void exportData()}
+            disabled={busy !== null}
+          >
+            {busy === "export" ? "Preparing…" : "Download my data"}
+            <Download size={15} />
+          </button>
+        </section>
       </div>
+      {user.role !== "admin" && (
+        <section className="danger-zone">
+          <Trash2 size={24} />
+          <h2>Close your account</h2>
+          <p className="muted">
+            This signs out every device, removes your listings from discovery,
+            unlinks sign-in providers and anonymizes your personal details. This
+            cannot be undone.
+          </p>
+          <form onSubmit={closeAccount}>
+            {user.has_password && (
+              <label>
+                Current password
+                <input
+                  name="current_password"
+                  type="password"
+                  required
+                  maxLength={128}
+                  autoComplete="current-password"
+                />
+              </label>
+            )}
+            <label>
+              Type CLOSE MY ACCOUNT
+              <input
+                name="confirmation"
+                required
+                pattern="CLOSE MY ACCOUNT"
+                autoComplete="off"
+              />
+            </label>
+            <button className="button danger" disabled={busy !== null}>
+              {busy === "close" ? "Closing…" : "Permanently close account"}
+            </button>
+          </form>
+        </section>
+      )}
     </>
   );
 }

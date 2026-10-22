@@ -1193,6 +1193,26 @@ textarea {
 .admin-users form label {
   margin-bottom: 0;
 }
+.danger-zone {
+  max-width: 760px;
+  margin-top: 64px;
+  padding: 28px;
+  border: 1px solid #d9b9ae;
+  background: #fbf5f2;
+}
+.danger-zone h2 {
+  margin: 12px 0;
+}
+.danger-zone form {
+  margin-top: 24px;
+}
+.button.danger {
+  background: #7b3027;
+  color: white;
+}
+.button.danger:hover {
+  background: #66251e;
+}
 .review-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
