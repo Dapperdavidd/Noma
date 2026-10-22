@@ -1164,6 +1164,35 @@ textarea {
 .admin-agent-details {
   font-size: 13px;
 }
+.admin-users {
+  display: grid;
+  gap: 14px;
+}
+.admin-users article {
+  padding: 22px;
+  border: 1px solid var(--line);
+}
+.admin-user-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+.admin-user-heading h3 {
+  margin: 12px 0 4px;
+}
+.admin-user-heading p {
+  margin: 0;
+}
+.admin-users form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 16px;
+  margin-top: 18px;
+}
+.admin-users form label {
+  margin-bottom: 0;
+}
 .review-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2583,6 +2612,9 @@ form .amenity-picker input {
   }
 }
 @media (max-width: 700px) {
+  .admin-users form {
+    grid-template-columns: 1fr;
+  }
   .agent-hero-card {
     align-items: flex-start;
     padding: 24px;

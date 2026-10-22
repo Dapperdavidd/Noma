@@ -1137,6 +1137,16 @@ test("administrator review is audited and verification stays independent", async
   expect(metrics.total_users).toBeGreaterThanOrEqual(3);
   expect(metrics.active_users).toBeGreaterThanOrEqual(3);
   expect(metrics).toHaveProperty("photos_uploaded_today");
+  const userQueue = await (
+    await administrator.client.get(`${baseURL}/admin/queue/users`)
+  ).json();
+  expect(userQueue.data.map((item: any) => item.id)).toEqual(
+    expect.arrayContaining([
+      administrator.user.id,
+      owner.user.id,
+      seeker.user.id,
+    ]),
+  );
   expect(
     (
       await owner.client.put(`${baseURL}/agent/profile`, {
@@ -1372,6 +1382,64 @@ test("administrator review is audited and verification stays independent", async
       })
     ).status(),
   ).toBe(403);
+  expect(
+    (
+      await owner.client.patch(`${baseURL}/admin/users/${seeker.user.id}`, {
+        data: {
+          action: "suspend",
+          reason: "An unauthorized account moderation attempt.",
+        },
+      })
+    ).status(),
+  ).toBe(403);
+  expect(
+    (
+      await administrator.client.patch(
+        `${baseURL}/admin/users/${administrator.user.id}`,
+        {
+          data: {
+            action: "suspend",
+            reason: "An administrator cannot suspend the current account.",
+          },
+        },
+      )
+    ).status(),
+  ).toBe(400);
+  expect(
+    (
+      await administrator.client.patch(
+        `${baseURL}/admin/users/${seeker.user.id}`,
+        {
+          data: {
+            action: "suspend",
+            reason: "Test marketplace safety suspension.",
+          },
+        },
+      )
+    ).status(),
+  ).toBe(204);
+  expect((await seeker.client.get(`${baseURL}/auth/me`)).status()).toBe(401);
+  const suspendedUsers = await (
+    await administrator.client.get(`${baseURL}/admin/queue/users`)
+  ).json();
+  expect(
+    suspendedUsers.data.find((item: any) => item.id === seeker.user.id)
+      .is_active,
+  ).toBe(false);
+  expect(
+    (
+      await administrator.client.patch(
+        `${baseURL}/admin/users/${seeker.user.id}`,
+        {
+          data: {
+            action: "reactivate",
+            reason: "Test review completed and access restored.",
+          },
+        },
+      )
+    ).status(),
+  ).toBe(204);
+  expect((await seeker.client.get(`${baseURL}/auth/me`)).status()).toBe(401);
   const audit = execFileSync(
     "psql",
     [
@@ -1381,7 +1449,7 @@ test("administrator review is audited and verification stays independent", async
     ],
     { encoding: "utf8" },
   );
-  expect(Number(audit.trim())).toBe(4);
+  expect(Number(audit.trim())).toBe(6);
   await administrator.client.dispose();
   await owner.client.dispose();
   await seeker.client.dispose();

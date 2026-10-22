@@ -34,6 +34,16 @@ type PropertyVerificationReview = {
   evidence_note: string;
   evidence_url: string | null;
 };
+type ManagedUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: "user" | "agent" | "admin";
+  is_active: boolean;
+  is_verified: boolean;
+  property_count: number;
+  active_sessions: number;
+};
 type Page<T> = { data: T[]; next_cursor: string | null };
 type Metrics = {
   total_users: number;
@@ -57,11 +67,13 @@ export function Admin() {
   const [propertyVerifications, setPropertyVerifications] = useState<
     PropertyVerificationReview[]
   >([]);
+  const [users, setUsers] = useState<ManagedUser[]>([]);
   const [cursors, setCursors] = useState({
     properties: null as string | null,
     agents: null as string | null,
     reports: null as string | null,
     propertyVerifications: null as string | null,
+    users: null as string | null,
   });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -73,6 +85,7 @@ export function Admin() {
         agentPage,
         reportPage,
         verificationPage,
+        userPage,
         nextMetrics,
       ] = await Promise.all([
         api<Page<Property>>("/admin/queue/properties"),
@@ -81,25 +94,29 @@ export function Admin() {
         api<Page<PropertyVerificationReview>>(
           "/admin/queue/property-verifications",
         ),
+        api<Page<ManagedUser>>("/admin/queue/users"),
         api<Metrics>("/admin/metrics"),
       ]);
       setProperties(propertyPage.data);
       setAgents(agentPage.data);
       setReports(reportPage.data);
       setPropertyVerifications(verificationPage.data);
+      setUsers(userPage.data);
       setMetrics(nextMetrics);
       setCursors({
         properties: propertyPage.next_cursor,
         agents: agentPage.next_cursor,
         reports: reportPage.next_cursor,
         propertyVerifications: verificationPage.next_cursor,
+        users: userPage.next_cursor,
       });
     } catch (e) {
       setError((e as Error).message);
     }
   }
   async function showMore(
-    kind: "properties" | "agents" | "reports" | "propertyVerifications",
+    kind:
+      "properties" | "agents" | "reports" | "propertyVerifications" | "users",
   ) {
     const cursor = cursors[kind];
     if (!cursor || busy) return;
@@ -130,12 +147,19 @@ export function Admin() {
           ...current,
           reports: page.next_cursor,
         }));
-      } else {
+      } else if (kind === "propertyVerifications") {
         const page = await api<Page<PropertyVerificationReview>>(path);
         setPropertyVerifications((current) => [...current, ...page.data]);
         setCursors((current) => ({
           ...current,
           propertyVerifications: page.next_cursor,
+        }));
+      } else {
+        const page = await api<Page<ManagedUser>>(path);
+        setUsers((current) => [...current, ...page.data]);
+        setCursors((current) => ({
+          ...current,
+          users: page.next_cursor,
         }));
       }
     } catch (e) {
@@ -149,6 +173,22 @@ export function Admin() {
     setBusy(true);
     try {
       await api(`/admin/reports/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(Object.fromEntries(new FormData(e.currentTarget))),
+      });
+      setError("");
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function manageUser(e: FormEvent<HTMLFormElement>, id: string) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api(`/admin/users/${id}`, {
         method: "PATCH",
         body: JSON.stringify(Object.fromEntries(new FormData(e.currentTarget))),
       });
@@ -219,6 +259,73 @@ export function Admin() {
             </article>
           ))}
         </section>
+      )}
+      <h2>Users</h2>
+      <div className="admin-users">
+        {users.map((managedUser) => (
+          <article key={managedUser.id}>
+            <div className="admin-user-heading">
+              <div>
+                <span className="status-pill">{managedUser.role}</span>
+                <h3>{managedUser.name}</h3>
+                <p>{managedUser.email}</p>
+              </div>
+              <strong className={managedUser.is_active ? "verified" : "muted"}>
+                {managedUser.is_active ? "Active" : "Suspended"}
+              </strong>
+            </div>
+            <p className="muted">
+              {managedUser.property_count} properties ·{" "}
+              {managedUser.active_sessions} active sessions · Email{" "}
+              {managedUser.is_verified ? "verified" : "unverified"}
+            </p>
+            {managedUser.role === "admin" ? (
+              <p className="muted">
+                Administrator access is managed through an audited database
+                process.
+              </p>
+            ) : (
+              <form onSubmit={(e) => manageUser(e, managedUser.id)}>
+                <input
+                  type="hidden"
+                  name="action"
+                  value={managedUser.is_active ? "suspend" : "reactivate"}
+                />
+                <label>
+                  Decision reason
+                  <textarea
+                    name="reason"
+                    required
+                    minLength={5}
+                    maxLength={2000}
+                    placeholder={
+                      managedUser.is_active
+                        ? "Explain why access should be suspended"
+                        : "Explain why access can be restored"
+                    }
+                  />
+                </label>
+                <button
+                  className={`button ${managedUser.is_active ? "outline" : "olive"}`}
+                  disabled={busy}
+                >
+                  {managedUser.is_active
+                    ? "Suspend account"
+                    : "Reactivate account"}
+                </button>
+              </form>
+            )}
+          </article>
+        ))}
+      </div>
+      {cursors.users && (
+        <button
+          className="button ghost load-more"
+          onClick={() => void showMore("users")}
+          disabled={busy}
+        >
+          Show more users
+        </button>
       )}
       <h2>Listing reports</h2>
       <div className="leads">

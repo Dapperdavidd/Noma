@@ -62,6 +62,29 @@ pub async fn queue(
     let limit = page.limit();
     let cursor_value = page.decoded_cursor()?;
     let data: Vec<Value> = match kind.as_str() {
+        "users" => {
+            let mut query: QueryBuilder<Postgres> = QueryBuilder::new(
+                "SELECT jsonb_build_object(
+                    'id',u.id,'name',u.first_name || ' ' || u.last_name,
+                    'email',u.email,'role',u.role,'is_active',u.is_active,
+                    'is_verified',u.is_verified,'created_at',u.created_at,
+                    'property_count',(SELECT count(*) FROM properties p WHERE p.agent_id=u.id),
+                    'active_sessions',(SELECT count(*) FROM sessions s WHERE s.user_id=u.id AND s.expires_at>now())
+                 ) FROM users u WHERE true",
+            );
+            if let Some((created_at, id)) = cursor_value {
+                query
+                    .push(" AND (u.created_at,u.id)<(")
+                    .push_bind(created_at)
+                    .push(",")
+                    .push_bind(id)
+                    .push(")");
+            }
+            query
+                .push(" ORDER BY u.created_at DESC,u.id DESC LIMIT ")
+                .push_bind(limit + 1);
+            query.build_query_scalar().fetch_all(pool.get_ref()).await?
+        }
         "properties" => {
             let mut query: QueryBuilder<Postgres> =
                 QueryBuilder::new(crate::properties::repository::CARD);
@@ -257,9 +280,104 @@ pub async fn review_report(
     tx.commit().await?;
     Ok(HttpResponse::NoContent().finish())
 }
+
+#[derive(Deserialize)]
+pub struct UserAction {
+    action: String,
+    reason: String,
+}
+
+pub async fn user_action(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+    body: web::Json<UserAction>,
+) -> Result<HttpResponse, ApiError> {
+    let actor = admin(&req, &pool).await?;
+    if !["suspend", "reactivate"].contains(&body.action.as_str()) {
+        return Err(bad("Invalid account action"));
+    }
+    if !(5..=2000).contains(&body.reason.trim().len()) {
+        return Err(bad("A decision reason of 5–2,000 characters is required"));
+    }
+    if actor.id == *id {
+        return Err(bad("You cannot change your own administrator access"));
+    }
+    let mut tx = pool.begin().await?;
+    let target: Option<(String, bool)> =
+        sqlx::query_as("SELECT role,is_active FROM users WHERE id=$1 FOR UPDATE")
+            .bind(*id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let (role, active) = target.ok_or(ApiError(StatusCode::NOT_FOUND, "User not found"))?;
+    if role == "admin" {
+        return Err(bad(
+            "Administrator accounts require a database-level access review",
+        ));
+    }
+    let should_be_active = body.action == "reactivate";
+    if active == should_be_active {
+        return Err(bad("The account is already in that state"));
+    }
+    sqlx::query("UPDATE users SET is_active=$1,updated_at=now() WHERE id=$2")
+        .bind(should_be_active)
+        .bind(*id)
+        .execute(&mut *tx)
+        .await?;
+    if !should_be_active {
+        sqlx::query("DELETE FROM sessions WHERE user_id=$1")
+            .bind(*id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "UPDATE properties SET status='suspended',is_verified=false,updated_at=now()
+             WHERE agent_id=$1 AND status='active'",
+        )
+        .bind(*id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "UPDATE property_verification_applications
+             SET status='withdrawn',reviewed_at=now()
+             WHERE applicant_id=$1 AND status='pending'",
+        )
+        .bind(*id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "UPDATE agent_verification_applications
+             SET status='withdrawn',reviewed_at=now()
+             WHERE agent_id=$1 AND status='pending'",
+        )
+        .bind(*id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "UPDATE agent_profiles SET verification_status='unsubmitted',updated_at=now()
+             WHERE user_id=$1",
+        )
+        .bind(*id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query(
+        "INSERT INTO moderation_events(id,actor_id,target_id,target_type,action,reason)
+         VALUES($1,$2,$3,'user',$4,$5)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(actor.id)
+    .bind(*id)
+    .bind(&body.action)
+    .bind(body.reason.trim())
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(HttpResponse::NoContent().finish())
+}
 pub fn routes(cfg: &mut web::ServiceConfig) {
     cfg.route("/admin/metrics", web::get().to(metrics))
         .route("/admin/queue/{kind}", web::get().to(queue))
         .route("/admin/reviews/{id}", web::post().to(review))
-        .route("/admin/reports/{id}", web::patch().to(review_report));
+        .route("/admin/reports/{id}", web::patch().to(review_report))
+        .route("/admin/users/{id}", web::patch().to(user_action));
 }
