@@ -28,3 +28,19 @@ FROM nginxinc/nginx-unprivileged:1.27-alpine AS web
 COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=web-build /workspace/apps/web/dist /usr/share/nginx/html
 EXPOSE 8080
+
+# Single-service image for low-cost hosts. The API serves the compiled SPA from
+# the same origin, preserving secure cookie behavior without a second service.
+FROM debian:bookworm-slim AS combined
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+RUN useradd --create-home --uid 10001 noma
+COPY --from=api-build /workspace/target/release/noma-api /usr/local/bin/noma-api
+COPY --from=web-build /workspace/apps/web/dist /opt/noma/web
+ENV STATIC_DIR=/opt/noma/web
+USER noma
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl --fail --silent "http://127.0.0.1:${PORT:-8080}/ready" >/dev/null || exit 1
+ENTRYPOINT ["/usr/local/bin/noma-api"]

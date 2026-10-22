@@ -15,9 +15,10 @@ mod properties;
 mod property_verification;
 mod reports;
 mod security;
+use actix_files::{Files, NamedFile};
 use actix_web::{
     App, HttpServer,
-    dev::Service,
+    dev::{Service, ServiceRequest, ServiceResponse, fn_service},
     http::header::{HeaderName, HeaderValue},
     middleware::{DefaultHeaders, Logger},
     web,
@@ -83,7 +84,10 @@ async fn main() -> std::io::Result<()> {
         .expect("Database migrations failed");
     auth::spawn_session_cleanup(pool.clone());
     let origins = web_origins();
-    let bind = std::env::var("API_BIND").unwrap_or_else(|_| "127.0.0.1:8080".into());
+    let bind = std::env::var("API_BIND")
+        .or_else(|_| std::env::var("PORT").map(|port| format!("0.0.0.0:{port}")))
+        .unwrap_or_else(|_| "127.0.0.1:8080".into());
+    let static_dir = std::env::var("STATIC_DIR").ok();
     tracing::info!(%bind,"NOMA API starting");
     let limiter = web::Data::new(security::RateLimiter::from_env());
     let email = web::Data::new(email::EmailClient::from_env());
@@ -93,6 +97,7 @@ async fn main() -> std::io::Result<()> {
         let cors_origins = origins.clone();
         let allowed_origins = origins.clone();
         let limits = limiter.clone();
+        let static_files = static_dir.clone();
         App::new()
             .app_data(web::Data::new(pool.clone()))
             .app_data(email.clone())
@@ -205,6 +210,25 @@ async fn main() -> std::io::Result<()> {
                     .configure(agents::routes)
                     .configure(admin::routes),
             )
+            .configure(move |cfg| {
+                if let Some(directory) = static_files.clone() {
+                    let index = std::path::PathBuf::from(&directory).join("index.html");
+                    cfg.service(
+                        Files::new("/", directory)
+                            .index_file("index.html")
+                            .prefer_utf8(true)
+                            .default_handler(fn_service(move |request: ServiceRequest| {
+                                let index = index.clone();
+                                async move {
+                                    let (request, _) = request.into_parts();
+                                    let file = NamedFile::open_async(index).await?;
+                                    let response = file.into_response(&request);
+                                    Ok(ServiceResponse::new(request, response))
+                                }
+                            })),
+                    );
+                }
+            })
     })
     .bind(bind)?
     .run()

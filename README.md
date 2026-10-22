@@ -53,11 +53,13 @@ Set `GOOGLE_CLIENT_ID` to a Google Identity Services web client ID. The API publ
 
 ## Production container
 
-`Dockerfile` contains separate `api` and `web` targets. The web image serves the compiled React application through unprivileged Nginx, routes `/api` to the Rust service, and falls back to `index.html` for browser routes. The API image runs as an unprivileged user and reports database-aware health through `/ready`.
+`Dockerfile` contains separate `api` and `web` targets plus a default `combined` target. The web image serves the compiled React application through unprivileged Nginx, routes `/api` to the Rust service, and falls back to `index.html` for browser routes. The API image runs as an unprivileged user and reports database-aware health through `/ready`. The combined image lets the API serve the compiled browser app from the same origin for simple single-service hosting.
 
 For a single-host deployment, set `DATABASE_URL`, `WEB_ORIGINS` (a comma-separated allowlist containing the exact public HTTPS origin), and the Cloudinary variables in a private environment file, then run `docker compose -f compose.production.yaml up --build -d`. `WEB_ORIGIN` remains supported for a single origin. The production compose file intentionally does not create a database; use a backed-up managed PostgreSQL service or a separately operated database. No provider account is required to build or run the images locally.
 
 Before deploying, run `npm run preflight -- /absolute/path/to/production.env --strict`. The validator checks production URLs, database credentials and provider configuration without printing secret values. Follow [the launch runbook](docs/launch-runbook.md) for backup restoration, staged rollout, smoke checks, monitoring and rollback.
+
+For a no-domain private pilot, follow the [free Render and Neon deployment guide](docs/free-pilot.md). The included `render.yaml` provisions the single combined service. Free hosting is useful for evaluation but does not provide the uptime, database retention or recovery guarantees required for a public marketplace.
 
 ## Media uploads
 
