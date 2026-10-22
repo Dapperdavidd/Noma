@@ -9,6 +9,7 @@
     "build": "npm run build --workspace apps/web",
     "typecheck": "npm run typecheck --workspace apps/web",
     "test": "playwright test",
+    "preflight": "node scripts/production-preflight.mjs",
     "format": "prettier --write \"apps/web/src/**/*.{ts,tsx,css}\" tests playwright.config.ts",
     "format:check": "prettier --check \"apps/web/src/**/*.{ts,tsx,css}\" tests playwright.config.ts"
   },

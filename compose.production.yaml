@@ -9,6 +9,7 @@ services:
       WEB_ORIGINS: ${WEB_ORIGINS:-${WEB_ORIGIN:?Set WEB_ORIGINS or WEB_ORIGIN}}
       COOKIE_SECURE: "true"
       RUST_LOG: ${RUST_LOG:-info}
+      RATE_LIMIT_AUTH_MAX: ${RATE_LIMIT_AUTH_MAX:-30}
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
@@ -17,6 +18,8 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-NOMA <onboarding@resend.dev>}
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:?Set PUBLIC_APP_URL}
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
+    stop_grace_period: 30s
     expose:
       - "8080"
     restart: unless-stopped

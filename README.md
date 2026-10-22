@@ -57,6 +57,8 @@ Set `GOOGLE_CLIENT_ID` to a Google Identity Services web client ID. The API publ
 
 For a single-host deployment, set `DATABASE_URL`, `WEB_ORIGINS` (a comma-separated allowlist containing the exact public HTTPS origin), and the Cloudinary variables in a private environment file, then run `docker compose -f compose.production.yaml up --build -d`. `WEB_ORIGIN` remains supported for a single origin. The production compose file intentionally does not create a database; use a backed-up managed PostgreSQL service or a separately operated database. No provider account is required to build or run the images locally.
 
+Before deploying, run `npm run preflight -- /absolute/path/to/production.env --strict`. The validator checks production URLs, database credentials and provider configuration without printing secret values. Follow [the launch runbook](docs/launch-runbook.md) for backup restoration, staged rollout, smoke checks, monitoring and rollback.
+
 ## Media uploads
 
 Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, and `CLOUDINARY_UPLOAD_PRESET` in the API environment. Create a **signed** preset that permits the intended image formats (JPEG/PNG/WebP/AVIF) and video formats (MP4/WebM/MOV), with limits matching the application’s 10 MB photo and 100 MB video limits. Secrets never belong in `VITE_*` variables. The API signs a unique per-user public ID, disables overwrites, and the browser uploads directly to Cloudinary. Without credentials, HTTPS image/video links and YouTube links remain usable while direct uploads return an explicit unavailable response. Upload signatures follow [Cloudinary's official signing specification](https://cloudinary.com/documentation/authentication_signatures).

@@ -14,7 +14,7 @@ Agent verification and listing verification are independent. Editing listing det
 
 Signed-in users can report active listings they do not own using a constrained category and written evidence. A partial unique index permits only one open report per user and property. Administrators resolve or dismiss reports with a required reason; the report stores its reviewer and resolution time, and the decision is also appended to the moderation event trail.
 
-The three moderation queues page independently using stable `(created_at, id)` cursors. Old reports, listings or agent applications therefore remain reachable even when another queue is busy.
+The moderation queues page independently using stable `(created_at, id)` cursors. Old reports, listings, users or verification applications therefore remain reachable even when another queue is busy.
 
 ## Search
 
@@ -48,7 +48,7 @@ This is the initial product foundation. Signed Cloudinary uploads are implemente
 
 Property HTTP handlers translate authentication and request data; DTOs validate listing inputs; the repository owns parameterized search, detail projections and transactional writes. Separate modules own authentication, agent profiles, moderation and signed upload issuance. Shared community endpoints cover the small location, favorites and inquiry features. Expand these into their own repositories when their behavior grows; avoid speculative generic service frameworks.
 
-A bounded in-process request limiter protects authentication and mutations. It is a single-instance guardrail, not a substitute for distributed edge protection. Only socket peer addresses are trusted, so a reverse proxy must apply its own user/IP-aware limits. Moderation decisions have an append-only application audit path. Listing edits invalidate listing verification; agent profile edits reset agent verification to pending.
+A bounded in-process request limiter protects authentication and mutations. It is a single-instance guardrail, not a substitute for distributed edge protection. Only socket peer addresses are trusted, so a reverse proxy must apply its own user/IP-aware limits. Moderation decisions have an append-only application audit path. Listing edits invalidate listing verification; agent profile edits reset agent verification to unsubmitted.
 
 ## Managed image lifecycle
 

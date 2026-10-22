@@ -1,11 +1,11 @@
-# Validation record — 29 September 2026
+# Validation record — 22 October 2026
 
 ## Automated checks
 
 - React/TypeScript production bundle builds successfully.
 - Rust formatter and Clippy pass with warnings treated as errors.
-- Three Rust unit tests cover request limiting, signature determinism and cursor parsing.
-- Ten Playwright integration/browser scenarios pass against a real PostgreSQL test database:
+- Seven Rust unit tests cover request limiting, upload and webhook signatures, email escaping, origin parsing and cursor parsing.
+- Thirteen Playwright integration/browser scenarios pass against a real PostgreSQL test database:
   - Email verification, generic recovery responses, single-use reset tokens, password replacement and session revocation.
   - Malformed edit identifiers cannot fall through to property creation.
   - Managed photo ownership, duplicate attachment prevention and removal queuing.
@@ -18,6 +18,9 @@
   - Browser registration, draft creation, publishing and detail navigation.
   - Agent profiles, normalized location filters, price and bedroom ranges, amenities, inquiry status permissions and disconnected upload behavior.
   - Administrator review audit, independent verification and suspended-listing protection.
+  - Agent and property verification applications, immutable review evidence and edit invalidation.
+  - Audited user suspension/reactivation with session revocation and listing protection.
+  - Account data export, password-confirmed closure, anonymization and listing removal.
   - Listing report validation, duplicate prevention, owner/admin boundaries and audited resolution.
   - Independent administrator queue pagination and malformed cursor rejection.
 
